@@ -37,6 +37,18 @@ pages:
             units: metric
             hour-format: 24h
 
+          - type: clock
+            hour-format: 24h
+            timezones:
+              - timezone: America/Los_Angeles
+                label: SF
+              - timezone: America/New_York
+                label: New York
+              - timezone: Europe/London
+                label: London
+              - timezone: Asia/Singapore
+                label: Singapore
+
       - size: full
         widgets:
           - type: search
@@ -236,3 +248,53 @@ pages:
             pull-requests-limit: 3
             issues-limit: 3
             commits-limit: 3
+
+  # =====================================================================
+  # PAGE 4 — FEEDS (reading, tuned to self-hosting + Go, not generic news)
+  # =====================================================================
+  - name: Feeds
+    columns:
+      - size: full
+        widgets:
+          # subreddits relevant to your work, packed into tabs
+          - type: group
+            widgets:
+              - type: reddit
+                subreddit: selfhosted
+              - type: reddit
+                subreddit: homelab
+              - type: reddit
+                subreddit: golang
+              - type: reddit
+                subreddit: kubernetes
+
+          - type: rss
+            title: lobste.rs
+            style: vertical-list
+            limit: 20
+            feeds:
+              - url: https://lobste.rs/rss
+                title: lobste.rs
+
+      - size: small
+        widgets:
+          - type: markets
+            markets:
+              - symbol: BTC-USD
+                name: Bitcoin
+              - symbol: ETH-USD
+                name: Ethereum
+              - symbol: "^GSPC"
+                name: S&P 500
+              - symbol: "^NSEI"
+                name: Nifty 50
+
+          # high-signal programmer RSS (swap in blogs you actually follow)
+          - type: rss
+            title: Reading
+            limit: 12
+            feeds:
+              - url: https://go.dev/blog/feed.atom
+                title: Go Blog
+              - url: https://jvns.ca/atom.xml
+                title: Julia Evans
