@@ -29,8 +29,14 @@ services:
       - ./glance:/app/config
       # read-only docker socket → powers the docker-containers widget
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # host root → lets the server-stats widget read the HOST, not the container
+      - /:/mnt/host:ro
     environment:
       - TZ=Asia/Kolkata
+      # point gopsutil (server-stats) at the host's proc/sys/etc instead of the container's
+      - HOST_PROC=/mnt/host/proc
+      - HOST_SYS=/mnt/host/sys
+      - HOST_ETC=/mnt/host/etc
     expose:
       - "8080"
     networks: [caddy]

@@ -13,6 +13,17 @@ pages:
             units: metric
             hour-format: 24h
 
+          - type: server-stats
+            servers:
+              - type: local
+                name: Homelab
+                # disk lives at the host mount (see docker-compose HOST_* setup)
+                mountpoints:
+                  "/":
+                    hide: true
+                  "/mnt/host":
+                    name: Disk
+
       # ---- center: services status + feeds ----
       - size: full
         widgets:
@@ -44,6 +55,22 @@ pages:
       # ---- right rail: infra + releases ----
       - size: small
         widgets:
+          # STUB — point url at LimeDB's real status endpoint and adjust the
+          # template to its JSON shape. Test the endpoint with curl first.
+          - type: custom-api
+            title: LimeDB Cluster
+            cache: 30s
+            url: https://limedb.namanvashistha.com/api/status
+            template: |
+              <div class="flex justify-between size-h3">
+                <span>Nodes healthy</span>
+                <span class="color-positive">{{ .JSON.Int "healthy_nodes" }}/4</span>
+              </div>
+              <div class="flex justify-between color-subdue">
+                <span>Keys</span>
+                <span>{{ .JSON.Int "total_keys" }}</span>
+              </div>
+
           - type: docker-containers
             # reads the read-only socket mounted in docker-compose.yml
             hide-by-default: false
