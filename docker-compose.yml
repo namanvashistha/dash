@@ -10,9 +10,13 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=Asia/Kolkata
+    expose:
+      - "8123"
     networks: [caddy]
     labels:
-      caddy: home.namanvashistha.com
+      # http:// scheme is required — deploy.sh runs Caddy in HTTP-only mode
+      # (auto_https=off) behind Cloudflare. Matches foodly/limedb/hyperbole.
+      caddy: http://home.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8123}}"
 
 networks:
