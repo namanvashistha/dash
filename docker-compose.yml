@@ -1,0 +1,18 @@
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Kolkata
+    networks: [caddy]
+    labels:
+      caddy: home.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 8123}}"
+
+networks:
+  caddy:
+    external: true

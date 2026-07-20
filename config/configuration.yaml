@@ -1,0 +1,16 @@
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Home Assistant is served behind the Caddy reverse proxy (home.namanvashistha.com).
+# Without this block HA rejects proxied requests with "400 Bad Request".
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.16.0.0/12   # docker bridge networks (caddy network lives here)
+    - 127.0.0.1
+    - ::1
+
+# HA writes the rest of its config into this directory on first boot.
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
