@@ -1,7 +1,9 @@
 pages:
+  # =====================================================================
+  # PAGE 1 — HOME (daily driver: nav, weather, your services, your data)
+  # =====================================================================
   - name: Home
     columns:
-      # ---- left rail: nav + time + weather ----
       - size: small
         widgets:
           - type: bookmarks
@@ -35,18 +37,6 @@ pages:
             units: metric
             hour-format: 24h
 
-          - type: server-stats
-            servers:
-              - type: local
-                name: Homelab
-                # disk lives at the host mount (see docker-compose HOST_* setup)
-                mountpoints:
-                  "/":
-                    hide: true
-                  "/mnt/host":
-                    name: Disk
-
-      # ---- center: search + services status + feeds ----
       - size: full
         widgets:
           - type: search
@@ -76,59 +66,8 @@ pages:
               - url: https://namanvashistha.com/rss.xml
                 title: namanvashistha.com
 
-          # your flagship repo's activity — issues, PRs, recent commits
-          - type: repository
-            repository: namanvashistha/limedb
-            pull-requests-limit: 5
-            issues-limit: 5
-            commits-limit: 3
-
-      # ---- right rail: infra + releases ----
       - size: small
         widgets:
-          # Live LimeDB data via the web frontend's proxy → node1:8484/api/v1
-          - type: custom-api
-            title: LimeDB Nodes
-            cache: 30s
-            url: https://limedb.namanvashistha.com/api/proxy/cluster/state
-            template: |
-              {{ range .JSON.Array "activeNodes" }}
-              <div class="flex justify-between">
-                <span>{{ .String "node_url" }}</span>
-                {{ if eq (.String "liveness") "alive" }}
-                <span class="color-positive">alive</span>
-                {{ else }}
-                <span class="color-negative">{{ .String "liveness" }}</span>
-                {{ end }}
-              </div>
-              {{ end }}
-
-          - type: custom-api
-            title: LimeDB Stats
-            cache: 30s
-            url: https://limedb.namanvashistha.com/api/proxy/health
-            template: |
-              <div class="flex justify-between size-h3">
-                <span>Status</span>
-                <span class="color-positive">{{ .JSON.String "status" }}</span>
-              </div>
-              <div class="flex justify-between color-subdue">
-                <span>Keys</span>
-                <span>{{ .JSON.Int "storage.approx_total_keys" }}</span>
-              </div>
-              <div class="flex justify-between color-subdue">
-                <span>Req/s</span>
-                <span>{{ printf "%.2f" (.JSON.Float "requests_per_second") }}</span>
-              </div>
-              <div class="flex justify-between color-subdue">
-                <span>Avg latency</span>
-                <span>{{ printf "%.2f" (.JSON.Float "average_latency_ms") }}ms</span>
-              </div>
-              <div class="flex justify-between color-subdue">
-                <span>Memory</span>
-                <span>{{ printf "%.0f" (.JSON.Float "memory_allocated_mb") }}MB</span>
-              </div>
-
           # Live chess games from your own API (data[] of games)
           - type: custom-api
             title: Chess Games
@@ -148,11 +87,95 @@ pages:
               {{ end }}
               {{ end }}
 
+          - type: custom-api
+            title: GitHub — namanvashistha
+            cache: 6h
+            url: https://api.github.com/users/namanvashistha
+            template: |
+              <div class="flex justify-between size-h3">
+                <span>Public repos</span>
+                <span class="color-positive">{{ .JSON.Int "public_repos" }}</span>
+              </div>
+              <div class="flex justify-between color-subdue"><span>Followers</span><span>{{ .JSON.Int "followers" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Following</span><span>{{ .JSON.Int "following" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Gists</span><span>{{ .JSON.Int "public_gists" }}</span></div>
+
+  # =====================================================================
+  # PAGE 2 — INFRA (the box + docker + live LimeDB cluster internals)
+  # =====================================================================
+  - name: Infra
+    columns:
+      - size: small
+        widgets:
+          - type: server-stats
+            servers:
+              - type: local
+                name: Homelab
+                # disk lives at the host mount (see docker-compose HOST_* setup)
+                mountpoints:
+                  "/":
+                    hide: true
+                  "/mnt/host":
+                    name: Disk
+
+          - type: custom-api
+            title: LimeDB Stats
+            cache: 30s
+            url: https://limedb.namanvashistha.com/api/proxy/health
+            template: |
+              <div class="flex justify-between size-h3">
+                <span>Status</span>
+                <span class="color-positive">{{ .JSON.String "status" }}</span>
+              </div>
+              <div class="flex justify-between color-subdue"><span>Keys</span><span>{{ .JSON.Int "storage.approx_total_keys" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Req/s</span><span>{{ printf "%.2f" (.JSON.Float "requests_per_second") }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Avg latency</span><span>{{ printf "%.2f" (.JSON.Float "average_latency_ms") }}ms</span></div>
+              <div class="flex justify-between color-subdue"><span>Memory</span><span>{{ printf "%.0f" (.JSON.Float "memory_allocated_mb") }}MB</span></div>
+              <div class="flex justify-between color-subdue"><span>Goroutines</span><span>{{ .JSON.Int "goroutines_count" }}</span></div>
+
+      - size: full
+        widgets:
           - type: docker-containers
             # reads the read-only socket mounted in docker-compose.yml
             hide-by-default: false
 
+          - type: custom-api
+            title: LimeDB Nodes
+            cache: 30s
+            url: https://limedb.namanvashistha.com/api/proxy/cluster/state
+            template: |
+              {{ range .JSON.Array "activeNodes" }}
+              <div class="flex justify-between">
+                <span>{{ .String "node_url" }}</span>
+                {{ if eq (.String "liveness") "alive" }}
+                <span class="color-positive">alive</span>
+                {{ else }}
+                <span class="color-negative">{{ .String "liveness" }}</span>
+                {{ end }}
+              </div>
+              {{ end }}
+
+      - size: small
+        widgets:
+          - type: custom-api
+            title: LimeDB Gossip
+            cache: 30s
+            url: https://limedb.namanvashistha.com/api/proxy/cluster/gossip
+            template: |
+              <div class="flex justify-between size-h3">
+                <span>Cluster</span>
+                <span class="color-positive">{{ .JSON.String "cluster_health" }}</span>
+              </div>
+              <div class="flex justify-between color-subdue"><span>Active peers</span><span>{{ .JSON.Int "active_peers" }}/{{ .JSON.Int "total_peers" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Dead peers</span><span>{{ .JSON.Int "dead_peers" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Convergence</span><span>{{ .JSON.Int "convergence_rate" }}%</span></div>
+              <div class="flex justify-between color-subdue"><span>Avg lag</span><span>{{ .JSON.Int "average_lag" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Max lag</span><span>{{ .JSON.Int "max_lag" }}</span></div>
+
           - type: releases
+            # optional GitHub token (server-side env) lifts the 60/hr anon limit
+            token: ${GLANCE_GITHUB_TOKEN}
+            cache: 6h
             repositories:
               - glanceapp/glance
               - home-assistant/core
@@ -160,3 +183,56 @@ pages:
               - golang/go
               - postgres/postgres
               - redis/redis
+
+  # =====================================================================
+  # PAGE 3 — DEV (your GitHub repos: issues, PRs, recent commits)
+  # =====================================================================
+  - name: Dev
+    columns:
+      - size: small
+        widgets:
+          - type: repository
+            repository: namanvashistha/hyperbole
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 3
+            issues-limit: 3
+            commits-limit: 3
+
+          - type: repository
+            repository: namanvashistha/text-to-image-bot
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 3
+            issues-limit: 3
+            commits-limit: 3
+
+      - size: full
+        widgets:
+          - type: repository
+            repository: namanvashistha/limedb
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 5
+            issues-limit: 5
+            commits-limit: 5
+
+          - type: repository
+            repository: namanvashistha/chess
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 5
+            issues-limit: 5
+            commits-limit: 5
+
+      - size: small
+        widgets:
+          - type: repository
+            repository: namanvashistha/namanvashistha.github.io
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 3
+            issues-limit: 3
+            commits-limit: 3
+
+          - type: repository
+            repository: namanvashistha/foodly
+            token: ${GLANCE_GITHUB_TOKEN}
+            pull-requests-limit: 3
+            issues-limit: 3
+            commits-limit: 3

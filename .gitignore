@@ -8,3 +8,6 @@ homeassistant/config/*
 
 # never commit secrets
 homeassistant/config/secrets.yaml
+
+# compose reads this for ${GLANCE_GITHUB_TOKEN} etc — keep secrets out of git
+.env
