@@ -1,6 +1,8 @@
 services:
   homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:stable
+    # Pinned: :stable currently ships 2026.7.x on Python 3.14, which deadlocks
+    # at boot (ImportExecutor hang). 2026.6 is the last minor on Python 3.13.
+    image: ghcr.io/home-assistant/home-assistant:2026.6
     container_name: homeassistant
     restart: unless-stopped
     volumes:
