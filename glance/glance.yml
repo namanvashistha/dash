@@ -55,20 +55,47 @@ pages:
       # ---- right rail: infra + releases ----
       - size: small
         widgets:
-          # STUB — point url at LimeDB's real status endpoint and adjust the
-          # template to its JSON shape. Test the endpoint with curl first.
+          # Live LimeDB data via the web frontend's proxy → node1:8484/api/v1
           - type: custom-api
-            title: LimeDB Cluster
+            title: LimeDB Nodes
             cache: 30s
-            url: https://limedb.namanvashistha.com/api/status
+            url: https://limedb.namanvashistha.com/api/proxy/cluster/state
+            template: |
+              {{ range .JSON.Array "activeNodes" }}
+              <div class="flex justify-between">
+                <span>{{ .String "node_url" }}</span>
+                {{ if eq (.String "liveness") "alive" }}
+                <span class="color-positive">alive</span>
+                {{ else }}
+                <span class="color-negative">{{ .String "liveness" }}</span>
+                {{ end }}
+              </div>
+              {{ end }}
+
+          - type: custom-api
+            title: LimeDB Stats
+            cache: 30s
+            url: https://limedb.namanvashistha.com/api/proxy/health
             template: |
               <div class="flex justify-between size-h3">
-                <span>Nodes healthy</span>
-                <span class="color-positive">{{ .JSON.Int "healthy_nodes" }}/4</span>
+                <span>Status</span>
+                <span class="color-positive">{{ .JSON.String "status" }}</span>
               </div>
               <div class="flex justify-between color-subdue">
                 <span>Keys</span>
-                <span>{{ .JSON.Int "total_keys" }}</span>
+                <span>{{ .JSON.Int "storage.approx_total_keys" }}</span>
+              </div>
+              <div class="flex justify-between color-subdue">
+                <span>Req/s</span>
+                <span>{{ printf "%.2f" (.JSON.Float "requests_per_second") }}</span>
+              </div>
+              <div class="flex justify-between color-subdue">
+                <span>Avg latency</span>
+                <span>{{ printf "%.2f" (.JSON.Float "average_latency_ms") }}ms</span>
+              </div>
+              <div class="flex justify-between color-subdue">
+                <span>Memory</span>
+                <span>{{ printf "%.0f" (.JSON.Float "memory_allocated_mb") }}MB</span>
               </div>
 
           - type: docker-containers
