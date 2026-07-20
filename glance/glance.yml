@@ -1,0 +1,54 @@
+pages:
+  - name: Home
+    columns:
+      # ---- left rail: time + weather ----
+      - size: small
+        widgets:
+          - type: calendar
+            first-day-of-week: monday
+
+          - type: weather
+            # geocoded via open-meteo, no API key. Change to your city.
+            location: Bengaluru, India
+            units: metric
+            hour-format: 24h
+
+      # ---- center: services status + feeds ----
+      - size: full
+        widgets:
+          - type: monitor
+            title: My Services
+            cache: 1m
+            sites:
+              - title: Home Assistant
+                url: https://home.namanvashistha.com
+                icon: si:homeassistant
+              - title: Chess
+                url: https://chess.namanvashistha.com
+              - title: Foodly
+                url: https://foodly.namanvashistha.com
+              - title: LimeDB
+                url: https://limedb.namanvashistha.com
+              - title: Hyperbole
+                url: https://hyperbole.namanvashistha.com
+
+          - type: rss
+            title: My Microblog
+            limit: 10
+            feeds:
+              - url: https://namanvashistha.com/rss.xml
+                title: namanvashistha.com
+
+          - type: hacker-news
+
+      # ---- right rail: infra + releases ----
+      - size: small
+        widgets:
+          - type: docker-containers
+            # reads the read-only socket mounted in docker-compose.yml
+            hide-by-default: false
+
+          - type: releases
+            repositories:
+              - glanceapp/glance
+              - home-assistant/core

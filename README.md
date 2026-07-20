@@ -1,51 +1,56 @@
-# homeassistant
+# dash
 
-Home Assistant deployment for `home.namanvashistha.com`.
+Personal dashboard stack. One repo, one `docker-compose.yml`, two services behind
+`caddy-docker-proxy`:
 
-Runs the official prebuilt image behind `caddy-docker-proxy` — no source fork, no
-build step. Deployed by the central `deploy.sh` (in the `namanvashistha.github.io`
-repo) which clones/pulls this repo and runs `docker compose up -d --build`.
+| Service | What | URL |
+|---|---|---|
+| `homeassistant` | Home Assistant (home control + dashboards) | home.namanvashistha.com |
+| `glance` | [Glance](https://github.com/glanceapp/glance) personal/info dashboard | dash.namanvashistha.com |
+
+Deployed by the central `deploy.sh` (in the `namanvashistha.github.io` repo), which
+clones/pulls this repo and runs `docker compose up -d --build`. One compose file
+brings both containers up together.
 
 ## Layout
 
 ```
-docker-compose.yml          # official HA image + caddy routing labels
-config/configuration.yaml   # reverse-proxy trust + default_config
-config/automations.yaml     # HA edits these via the UI; versioned here
-config/scripts.yaml
-config/scenes.yaml
+docker-compose.yml               # both services + caddy routing labels
+homeassistant/config/            # HA config (rest is runtime, gitignored)
+  configuration.yaml             #   reverse-proxy trust + default_config
+  automations.yaml scripts.yaml scenes.yaml
+glance/glance.yml                # Glance dashboard config
 ```
-
-Everything else HA writes into `config/` at runtime (database, secrets, `.storage`)
-is gitignored.
 
 ## Deploy
 
-Add to `deploy.sh` REPOS in the main site repo:
+Entry in `deploy.sh` REPOS (main site repo):
 
 ```
-"homeassistant|https://github.com/namanvashistha/homeassistant.git"
+"dash|https://github.com/namanvashistha/dash.git"
 ```
 
-then run `deploy.sh` on the server. First boot takes ~1 min while HA initializes.
-Open **https://home.namanvashistha.com** and create the owner account.
+then run `deploy.sh` on the server. Live at **home.** and **dash.**namanvashistha.com.
 
-## Networking note
+## Notes
 
-Uses **bridge** networking so it can join the `caddy` network for reverse-proxy
-routing. This trades away mDNS/DHCP device auto-discovery — add integrations by IP
-or cloud instead. If you later add a Zigbee/Z-Wave USB dongle, that needs a
-`devices:` passthrough (and usually host networking); adjust the compose then.
+- **HA pinned to `2026.6`**: `:stable` ships 2026.7 on Python 3.14, which deadlocks
+  at boot (`ImportExecutor` hang, 0% CPU, never binds 8123). 2026.6 is the last
+  Python-3.13 minor. Revisit `:stable` once HA's 3.14 boot bug is fixed.
+- **`http://` scheme on Caddy labels is required** — `deploy.sh` runs Caddy with
+  `auto_https=off` behind Cloudflare; a scheme-less site address breaks routing.
+- **Glance** reads `glance/glance.yml` and the read-only docker socket (for the
+  container-status widget). Edit `glance.yml` → `docker compose restart glance`.
+- **Networking**: HA uses bridge (to join the `caddy` network), trading away
+  mDNS/DHCP auto-discovery. Add integrations by IP/cloud. A Zigbee/Z-Wave USB
+  dongle would need `devices:` passthrough (usually host networking) — adjust then.
 
 ## Security
 
 `home.namanvashistha.com` is internet-facing and controls the home. Use a strong
-owner password and enable MFA in HA. Consider fronting it with Cloudflare Access or
-a VPN for anything beyond a strong password.
+owner password + MFA. Consider Cloudflare Access or a VPN in front.
 
-## Tablet dashboard
+## Tablet
 
-HA's built-in Lovelace dashboard *is* the tablet dashboard. On the tablet: open the
-URL → "Add to Home Screen" for a fullscreen PWA. For a wall panel, pair with **Fully
-Kiosk Browser** (Android) and the **Kiosk Mode** custom card (via HACS) to hide the
-header/sidebar.
+Open `dash.` (info) or `home.` (control) → "Add to Home Screen" for a fullscreen
+PWA. For a wall panel use Fully Kiosk Browser (Android).

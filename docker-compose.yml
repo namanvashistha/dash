@@ -6,7 +6,7 @@ services:
     container_name: homeassistant
     restart: unless-stopped
     volumes:
-      - ./config:/config
+      - ./homeassistant/config:/config
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=Asia/Kolkata
@@ -18,6 +18,25 @@ services:
       # (auto_https=off) behind Cloudflare. Matches foodly/limedb/hyperbole.
       caddy: http://home.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8123}}"
+
+  glance:
+    # Personal dashboard. Pin a tag once you know a good one; latest is low-risk
+    # for glance (single Go binary), unlike HA above.
+    image: glanceapp/glance:latest
+    container_name: glance
+    restart: unless-stopped
+    volumes:
+      - ./glance:/app/config
+      # read-only docker socket → powers the docker-containers widget
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=Asia/Kolkata
+    expose:
+      - "8080"
+    networks: [caddy]
+    labels:
+      caddy: http://dash.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 8080}}"
 
 networks:
   caddy:

@@ -1,11 +1,10 @@
 # Home Assistant runtime state — secrets, database, logs, cache.
 # We only version the config files we author; HA generates the rest at runtime.
-config/*
-!config/configuration.yaml
-!config/automations.yaml
-!config/scripts.yaml
-!config/scenes.yaml
-!config/.gitkeep
+homeassistant/config/*
+!homeassistant/config/configuration.yaml
+!homeassistant/config/automations.yaml
+!homeassistant/config/scripts.yaml
+!homeassistant/config/scenes.yaml
 
 # never commit secrets
-config/secrets.yaml
+homeassistant/config/secrets.yaml
