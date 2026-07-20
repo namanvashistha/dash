@@ -41,6 +41,9 @@ services:
       # Empty default keeps Glance booting even when unset. Set it in a
       # gitignored .env in this dir (compose auto-reads it): GLANCE_GITHUB_TOKEN=ghp_...
       - GLANCE_GITHUB_TOKEN=${GLANCE_GITHUB_TOKEN:-}
+      # optional — HA long-lived token for the Home Assistant bridge widget.
+      # Empty default keeps Glance booting; set it in .env to enable.
+      - HA_TOKEN=${HA_TOKEN:-}
     expose:
       - "8080"
     networks: [caddy]

@@ -1,6 +1,14 @@
+# ---- aesthetic: dark slate + teal accent (HSL: "H S L") ----
+theme:
+  background-color: 220 18 11
+  contrast-multiplier: 1.2
+  primary-color: 160 60 62
+  positive-color: 150 55 55
+  negative-color: 353 68 62
+
 pages:
   # =====================================================================
-  # PAGE 1 — HOME (daily driver: nav, weather, your services, your data)
+  # PAGE 1 — HOME (daily driver)
   # =====================================================================
   - name: Home
     columns:
@@ -32,7 +40,6 @@ pages:
             first-day-of-week: monday
 
           - type: weather
-            # geocoded via open-meteo, no API key. Change to your city.
             location: Bengaluru, India
             units: metric
             hour-format: 24h
@@ -40,14 +47,10 @@ pages:
           - type: clock
             hour-format: 24h
             timezones:
-              - timezone: America/Los_Angeles
-                label: SF
-              - timezone: America/New_York
-                label: New York
-              - timezone: Europe/London
-                label: London
-              - timezone: Asia/Singapore
-                label: Singapore
+              - { timezone: America/Los_Angeles, label: SF }
+              - { timezone: America/New_York, label: New York }
+              - { timezone: Europe/London, label: London }
+              - { timezone: Asia/Singapore, label: Singapore }
 
       - size: full
         widgets:
@@ -59,17 +62,11 @@ pages:
             title: My Services
             cache: 1m
             sites:
-              - title: Home Assistant
-                url: https://home.namanvashistha.com
-                icon: si:homeassistant
-              - title: Chess
-                url: https://chess.namanvashistha.com
-              - title: Foodly
-                url: https://foodly.namanvashistha.com
-              - title: LimeDB
-                url: https://limedb.namanvashistha.com
-              - title: Hyperbole
-                url: https://hyperbole.namanvashistha.com
+              - { title: Home Assistant, url: https://home.namanvashistha.com, icon: si:homeassistant }
+              - { title: Chess, url: https://chess.namanvashistha.com }
+              - { title: Foodly, url: https://foodly.namanvashistha.com }
+              - { title: LimeDB, url: https://limedb.namanvashistha.com }
+              - { title: Hyperbole, url: https://hyperbole.namanvashistha.com }
 
           - type: rss
             title: My Microblog
@@ -80,7 +77,6 @@ pages:
 
       - size: small
         widgets:
-          # Live chess games from your own API (data[] of games)
           - type: custom-api
             title: Chess Games
             cache: 1m
@@ -113,7 +109,7 @@ pages:
               <div class="flex justify-between color-subdue"><span>Gists</span><span>{{ .JSON.Int "public_gists" }}</span></div>
 
   # =====================================================================
-  # PAGE 2 — INFRA (the box + docker + live LimeDB cluster internals)
+  # PAGE 2 — INFRA (host, docker, live LimeDB internals, HA bridge)
   # =====================================================================
   - name: Infra
     columns:
@@ -123,7 +119,6 @@ pages:
             servers:
               - type: local
                 name: Homelab
-                # disk lives at the host mount (see docker-compose HOST_* setup)
                 mountpoints:
                   "/":
                     hide: true
@@ -131,24 +126,31 @@ pages:
                     name: Disk
 
           - type: custom-api
-            title: LimeDB Stats
-            cache: 30s
-            url: https://limedb.namanvashistha.com/api/proxy/health
+            title: Server IP & Geo
+            cache: 12h
+            url: https://ipinfo.io/json
             template: |
-              <div class="flex justify-between size-h3">
-                <span>Status</span>
-                <span class="color-positive">{{ .JSON.String "status" }}</span>
-              </div>
-              <div class="flex justify-between color-subdue"><span>Keys</span><span>{{ .JSON.Int "storage.approx_total_keys" }}</span></div>
-              <div class="flex justify-between color-subdue"><span>Req/s</span><span>{{ printf "%.2f" (.JSON.Float "requests_per_second") }}</span></div>
-              <div class="flex justify-between color-subdue"><span>Avg latency</span><span>{{ printf "%.2f" (.JSON.Float "average_latency_ms") }}ms</span></div>
-              <div class="flex justify-between color-subdue"><span>Memory</span><span>{{ printf "%.0f" (.JSON.Float "memory_allocated_mb") }}MB</span></div>
-              <div class="flex justify-between color-subdue"><span>Goroutines</span><span>{{ .JSON.Int "goroutines_count" }}</span></div>
+              <div class="flex justify-between size-h3"><span>IP</span><span class="color-positive">{{ .JSON.String "ip" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Location</span><span>{{ .JSON.String "city" }}, {{ .JSON.String "region" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>ISP</span><span>{{ .JSON.String "org" }}</span></div>
+
+          # NEW — Home Assistant bridge. Lights up once HA_TOKEN is set in .env
+          # (create a long-lived token in HA → profile → security). Until then
+          # this one card shows an auth error; that's expected.
+          - type: custom-api
+            title: Home Assistant — Sun
+            cache: 10m
+            url: https://home.namanvashistha.com/api/states/sun.sun
+            headers:
+              Authorization: Bearer ${HA_TOKEN}
+            template: |
+              <div class="flex justify-between size-h3"><span>Sun</span><span class="color-positive">{{ .JSON.String "state" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Next rising</span><span>{{ .JSON.String "attributes.next_rising" }}</span></div>
+              <div class="flex justify-between color-subdue"><span>Next setting</span><span>{{ .JSON.String "attributes.next_setting" }}</span></div>
 
       - size: full
         widgets:
           - type: docker-containers
-            # reads the read-only socket mounted in docker-compose.yml
             hide-by-default: false
 
           - type: custom-api
@@ -169,23 +171,43 @@ pages:
 
       - size: small
         widgets:
-          - type: custom-api
-            title: LimeDB Gossip
-            cache: 30s
-            url: https://limedb.namanvashistha.com/api/proxy/cluster/gossip
-            template: |
-              <div class="flex justify-between size-h3">
-                <span>Cluster</span>
-                <span class="color-positive">{{ .JSON.String "cluster_health" }}</span>
-              </div>
-              <div class="flex justify-between color-subdue"><span>Active peers</span><span>{{ .JSON.Int "active_peers" }}/{{ .JSON.Int "total_peers" }}</span></div>
-              <div class="flex justify-between color-subdue"><span>Dead peers</span><span>{{ .JSON.Int "dead_peers" }}</span></div>
-              <div class="flex justify-between color-subdue"><span>Convergence</span><span>{{ .JSON.Int "convergence_rate" }}%</span></div>
-              <div class="flex justify-between color-subdue"><span>Avg lag</span><span>{{ .JSON.Int "average_lag" }}</span></div>
-              <div class="flex justify-between color-subdue"><span>Max lag</span><span>{{ .JSON.Int "max_lag" }}</span></div>
+          # NEW — tabbed group consolidates the LimeDB internals aesthetically
+          - type: group
+            widgets:
+              - type: custom-api
+                title: Stats
+                cache: 30s
+                url: https://limedb.namanvashistha.com/api/proxy/health
+                template: |
+                  <div class="flex justify-between size-h3"><span>Status</span><span class="color-positive">{{ .JSON.String "status" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Keys</span><span>{{ .JSON.Int "storage.approx_total_keys" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Req/s</span><span>{{ printf "%.2f" (.JSON.Float "requests_per_second") }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Avg latency</span><span>{{ printf "%.2f" (.JSON.Float "average_latency_ms") }}ms</span></div>
+                  <div class="flex justify-between color-subdue"><span>Memory</span><span>{{ printf "%.0f" (.JSON.Float "memory_allocated_mb") }}MB</span></div>
+                  <div class="flex justify-between color-subdue"><span>Goroutines</span><span>{{ .JSON.Int "goroutines_count" }}</span></div>
+
+              - type: custom-api
+                title: Gossip
+                cache: 30s
+                url: https://limedb.namanvashistha.com/api/proxy/cluster/gossip
+                template: |
+                  <div class="flex justify-between size-h3"><span>Cluster</span><span class="color-positive">{{ .JSON.String "cluster_health" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Active peers</span><span>{{ .JSON.Int "active_peers" }}/{{ .JSON.Int "total_peers" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Dead peers</span><span>{{ .JSON.Int "dead_peers" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Convergence</span><span>{{ .JSON.Int "convergence_rate" }}%</span></div>
+                  <div class="flex justify-between color-subdue"><span>Avg / Max lag</span><span>{{ .JSON.Int "average_lag" }} / {{ .JSON.Int "max_lag" }}</span></div>
+
+              # NEW — ring / placement view
+              - type: custom-api
+                title: Ring
+                cache: 1m
+                url: https://limedb.namanvashistha.com/api/proxy/cluster/ring
+                template: |
+                  <div class="flex justify-between size-h3"><span>Ring nodes</span><span class="color-positive">{{ len (.JSON.Array "allNodes") }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Placement epoch</span><span>{{ .JSON.Int "placementEpoch" }}</span></div>
+                  <div class="flex justify-between color-subdue"><span>Coordinator</span><span>{{ .JSON.String "currentNode" }}</span></div>
 
           - type: releases
-            # optional GitHub token (server-side env) lifts the 60/hr anon limit
             token: ${GLANCE_GITHUB_TOKEN}
             cache: 6h
             repositories:
@@ -197,21 +219,53 @@ pages:
               - redis/redis
 
   # =====================================================================
-  # PAGE 3 — DEV (your GitHub repos: issues, PRs, recent commits)
+  # PAGE 3 — DEV (CI status + your GitHub repos)
   # =====================================================================
   - name: Dev
     columns:
       - size: small
         widgets:
-          - type: repository
-            repository: namanvashistha/hyperbole
-            token: ${GLANCE_GITHUB_TOKEN}
-            pull-requests-limit: 3
-            issues-limit: 3
-            commits-limit: 3
+          # NEW — CI status for your active repos, tabbed
+          - type: group
+            widgets:
+              - type: custom-api
+                title: CI · limedb
+                cache: 20m
+                url: https://api.github.com/repos/namanvashistha/limedb/actions/runs?per_page=6
+                template: |
+                  {{ range $i, $r := .JSON.Array "workflow_runs" }}
+                  {{ if lt $i 6 }}
+                  <div class="flex justify-between color-subdue">
+                    <span>{{ $r.String "name" }}</span>
+                    {{ if eq ($r.String "conclusion") "success" }}
+                    <span class="color-positive">✓</span>
+                    {{ else }}
+                    <span class="color-negative">{{ $r.String "conclusion" }}</span>
+                    {{ end }}
+                  </div>
+                  {{ end }}
+                  {{ end }}
+
+              - type: custom-api
+                title: CI · chess
+                cache: 20m
+                url: https://api.github.com/repos/namanvashistha/chess/actions/runs?per_page=6
+                template: |
+                  {{ range $i, $r := .JSON.Array "workflow_runs" }}
+                  {{ if lt $i 6 }}
+                  <div class="flex justify-between color-subdue">
+                    <span>{{ $r.String "name" }}</span>
+                    {{ if eq ($r.String "conclusion") "success" }}
+                    <span class="color-positive">✓</span>
+                    {{ else }}
+                    <span class="color-negative">{{ $r.String "conclusion" }}</span>
+                    {{ end }}
+                  </div>
+                  {{ end }}
+                  {{ end }}
 
           - type: repository
-            repository: namanvashistha/text-to-image-bot
+            repository: namanvashistha/hyperbole
             token: ${GLANCE_GITHUB_TOKEN}
             pull-requests-limit: 3
             issues-limit: 3
@@ -243,30 +297,27 @@ pages:
             commits-limit: 3
 
           - type: repository
-            repository: namanvashistha/foodly
+            repository: namanvashistha/text-to-image-bot
             token: ${GLANCE_GITHUB_TOKEN}
             pull-requests-limit: 3
             issues-limit: 3
             commits-limit: 3
 
   # =====================================================================
-  # PAGE 4 — FEEDS (reading, tuned to self-hosting + Go, not generic news)
+  # PAGE 4 — FEEDS (self-hosting + Go, markets, videos)
   # =====================================================================
   - name: Feeds
     columns:
       - size: full
         widgets:
-          # subreddits relevant to your work, packed into tabs
           - type: group
             widgets:
-              - type: reddit
-                subreddit: selfhosted
-              - type: reddit
-                subreddit: homelab
-              - type: reddit
-                subreddit: golang
-              - type: reddit
-                subreddit: kubernetes
+              - { type: reddit, subreddit: selfhosted }
+              - { type: reddit, subreddit: homelab }
+              - { type: reddit, subreddit: golang }
+              - { type: reddit, subreddit: kubernetes }
+              - { type: reddit, subreddit: devops }
+              - { type: reddit, subreddit: programming }
 
           - type: rss
             title: lobste.rs
@@ -278,23 +329,30 @@ pages:
 
       - size: small
         widgets:
+          # NEW — dedicated crypto board
           - type: markets
+            title: Crypto
             markets:
-              - symbol: BTC-USD
-                name: Bitcoin
-              - symbol: ETH-USD
-                name: Ethereum
-              - symbol: "^GSPC"
-                name: S&P 500
-              - symbol: "^NSEI"
-                name: Nifty 50
+              - { symbol: BTC-USD, name: Bitcoin }
+              - { symbol: ETH-USD, name: Ethereum }
+              - { symbol: SOL-USD, name: Solana }
+              - { symbol: DOGE-USD, name: Dogecoin }
 
-          # high-signal programmer RSS (swap in blogs you actually follow)
+          - type: markets
+            title: Indices
+            markets:
+              - { symbol: "^GSPC", name: S&P 500 }
+              - { symbol: "^NSEI", name: Nifty 50 }
+
+          # NEW — Cloudflare blog (you run behind Cloudflare)
           - type: rss
-            title: Reading
-            limit: 12
+            title: Cloudflare Blog
+            limit: 8
             feeds:
-              - url: https://go.dev/blog/feed.atom
-                title: Go Blog
-              - url: https://jvns.ca/atom.xml
-                title: Julia Evans
+              - url: https://blog.cloudflare.com/rss/
+                title: Cloudflare
+
+          # NEW — tech videos (add channel IDs you follow)
+          - type: videos
+            channels:
+              - UCsBjURrPoezykLs9EqgamOA   # Fireship
