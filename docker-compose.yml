@@ -65,7 +65,7 @@ services:
       # Public URL (https at Cloudflare) — Docmost builds absolute links from it.
       - APP_URL=https://docs.namanvashistha.com
       # Required. Long random secret — set in .env: openssl rand -hex 32
-      - APP_SECRET=${DOCMOST_APP_SECRET}
+      - APP_SECRET=docmostdocmostdocmostdocmostdocmost
       - DATABASE_URL=postgresql://docmost:docmost@docmost-db:5432/docmost?schema=public
       - REDIS_URL=redis://docmost-redis:6379
       - TZ=Asia/Kolkata
