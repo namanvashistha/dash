@@ -1,12 +1,16 @@
 # dash
 
-Personal dashboard stack. One repo, one `docker-compose.yml`, two services behind
-`caddy-docker-proxy`:
+Personal dashboard stack. One repo, one `docker-compose.yml`, three app services
+behind `caddy-docker-proxy`:
 
 | Service | What | URL |
 |---|---|---|
 | `homeassistant` | Home Assistant (home control + dashboards) | home.namanvashistha.com |
 | `glance` | [Glance](https://github.com/glanceapp/glance) personal/info dashboard | dash.namanvashistha.com |
+| `docmost` | [Docmost](https://github.com/docmost/docmost) collaborative wiki / docs | docs.namanvashistha.com |
+
+`docmost` is backed by internal-only `docmost-db` (Postgres) and `docmost-redis`
+containers — not reverse-proxied, isolated on the internal `docmost` network.
 
 Deployed by the central `deploy.sh` (in the `namanvashistha.github.io` repo), which
 clones/pulls this repo and runs `docker compose up -d --build`. One compose file
@@ -41,6 +45,10 @@ then run `deploy.sh` on the server. Live at **home.** and **dash.**namanvashisth
   `auto_https=off` behind Cloudflare; a scheme-less site address breaks routing.
 - **Glance** reads `glance/glance.yml` and the read-only docker socket (for the
   container-status widget). Edit `glance.yml` → `docker compose restart glance`.
+- **Docmost** needs `DOCMOST_APP_SECRET` and `DOCMOST_DB_PASSWORD` set in `.env`
+  before first boot (see `.env.example`). Docs live in the Postgres DB; only
+  attachments/avatars are on the `docmost-storage` volume. First run auto-creates
+  the schema — open `docs.namanvashistha.com` to set up the owner account.
 - **Networking**: HA uses bridge (to join the `caddy` network), trading away
   mDNS/DHCP auto-discovery. Add integrations by IP/cloud. A Zigbee/Z-Wave USB
   dongle would need `devices:` passthrough (usually host networking) — adjust then.

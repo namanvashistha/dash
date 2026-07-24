@@ -51,6 +51,66 @@ services:
       caddy: http://dash.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8080}}"
 
+  # ---- Docmost: self-hosted collaborative wiki / docs ----
+  # App container. Its Postgres + Redis live on the internal `docmost` network
+  # below and are never exposed to caddy. Only this service is reverse-proxied.
+  docmost:
+    image: docmost/docmost:latest
+    container_name: docmost
+    restart: unless-stopped
+    depends_on:
+      - docmost-db
+      - docmost-redis
+    environment:
+      # Public URL (https at Cloudflare) — Docmost builds absolute links from it.
+      - APP_URL=https://docs.namanvashistha.com
+      # Required. Long random secret — set in .env: openssl rand -hex 32
+      - APP_SECRET=${DOCMOST_APP_SECRET}
+      - DATABASE_URL=postgresql://docmost:docmost@docmost-db:5432/docmost?schema=public
+      - REDIS_URL=redis://docmost-redis:6379
+      - TZ=Asia/Kolkata
+    volumes:
+      # uploaded attachments / avatars (DB holds the docs themselves)
+      - docmost-storage:/app/data/storage
+    expose:
+      - "3000"
+    # on caddy (for the reverse proxy) AND docmost (to reach db/redis)
+    networks: [caddy, docmost]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://docs.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+
+  docmost-db:
+    image: postgres:16-alpine
+    container_name: docmost-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=docmost
+      - POSTGRES_USER=docmost
+      - POSTGRES_PASSWORD=docmost
+      - TZ=Asia/Kolkata
+    volumes:
+      - docmost-db:/var/lib/postgresql/data
+    networks: [docmost]
+
+  docmost-redis:
+    image: redis:7-alpine
+    container_name: docmost-redis
+    restart: unless-stopped
+    volumes:
+      - docmost-redis:/data
+    networks: [docmost]
+
 networks:
   caddy:
     external: true
+  # backend-only network for Docmost's db/redis — internal:true keeps it off
+  # the host/internet; the app reaches out via the caddy network instead.
+  docmost:
+    internal: true
+
+volumes:
+  docmost-storage:
+  docmost-db:
+  docmost-redis:

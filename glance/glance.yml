@@ -21,6 +21,9 @@ pages:
                   - title: Home Assistant
                     url: https://home.namanvashistha.com
                     icon: si:homeassistant
+                  - title: Docs
+                    url: https://docs.namanvashistha.com
+                    icon: si:docusaurus
                   - title: Chess
                     url: https://chess.namanvashistha.com
                   - title: LimeDB
@@ -63,6 +66,7 @@ pages:
             cache: 1m
             sites:
               - { title: Home Assistant, url: https://home.namanvashistha.com, icon: si:homeassistant }
+              - { title: Docs, url: https://docs.namanvashistha.com }
               - { title: Chess, url: https://chess.namanvashistha.com }
               - { title: Foodly, url: https://foodly.namanvashistha.com }
               - { title: LimeDB, url: https://limedb.namanvashistha.com }
