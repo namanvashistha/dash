@@ -1,0 +1,27 @@
+﻿.eCardcontainer {
+    display: flex;
+    gap: 20px; /* space between divs */
+    flex-wrap: wrap; /* allows wrapping on smaller screens */
+}
+
+.myeCardbox {
+    flex: 1 1 300px; /* grow, shrink, minimum width */
+}
+
+.eCardHelp {
+    padding: 20px;
+    background-color: #F5F5F5;
+    margin-bottom: 5px !important;
+}
+
+    .eCardHelp p.h5 {
+        font-weight: 700 !important; /* or 'bold' */
+    }
+
+    .eCardHelp p, .eCardHelp li {
+        color: black !important;
+    }
+
+.form-group p {
+    margin-top: 10px; /* or whatever spacing you need */
+}
