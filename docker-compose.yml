@@ -183,7 +183,17 @@ services:
       caddy.reverse_proxy: "{{upstreams 3001}}"
 
   autokuma:
-    image: ghcr.io/bigboot/autokuma:latest
+    # Two things make this exact tag necessary; `:latest` fails on both.
+    #  1. `:latest` is v2.0.0, which predates the structured snippet env vars
+    #     (SNIPPETS__0__KEY / __VALUE, added 2026-05-22). Without them AutoKuma
+    #     rejects the config with:
+    #       Invalid config: invalid type: map, expected a string for key `snippets.0`
+    #     `!Snippets` themselves are old enough to be in v2.0.0 — it is only the
+    #     env-var form of declaring them that is newer.
+    #  2. AutoKuma 2.1 targets Uptime Kuma v2 by default. We run Kuma v1
+    #     (louislam/uptime-kuma:1), so the `uptime-kuma-v1-` build is required.
+    # It is a release candidate. Bump to the stable 2.1.0 tag once it exists.
+    image: ghcr.io/bigboot/autokuma:uptime-kuma-v1-2.1.0-rc.2
     container_name: autokuma
     restart: unless-stopped
     depends_on:
