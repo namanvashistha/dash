@@ -80,6 +80,27 @@ services:
       caddy: http://hub.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 3000}}"
 
+  # ---- Homepage auto-discovery ----
+  # Reads every container's caddy: label and (re)writes homepage/services.yaml,
+  # so any caddy-routed service appears on Homepage automatically — no per-
+  # service homepage.* labels. Same zero-touch idea as AutoKuma's !caddy.
+  homepage-autodiscover:
+    image: docker:27-cli
+    container_name: homepage-autodiscover
+    restart: unless-stopped
+    depends_on:
+      - homepage
+    # No network needed — it only talks to the docker socket (unix).
+    network_mode: none
+    environment:
+      - INTERVAL=30
+    volumes:
+      # read-only socket → enumerate containers + read their labels
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./homepage:/config
+      - ./homepage/autodiscover.sh:/autodiscover.sh:ro
+    entrypoint: ["sh", "/autodiscover.sh"]
+
   # ---- Docmost: self-hosted collaborative wiki / docs ----
   # App container. Its Postgres + Redis live on the internal `docmost` network
   # below and are never exposed to caddy. Only this service is reverse-proxied.

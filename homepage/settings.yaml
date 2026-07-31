@@ -11,13 +11,10 @@ hideVersion: true
 
 # Group order + how each group renders. Names MUST match the groups in
 # services.yaml, or a group falls back to the default column layout.
+# Services are auto-discovered from caddy: labels into a single "Discovered"
+# group (see homepage-autodiscover). Add curated groups here only if you also
+# populate services.header.yaml.
 layout:
-  Infrastructure:
+  Discovered:
     style: row
-    columns: 2
-  Applications:
-    style: row
-    columns: 2
-  Monitoring:
-    style: row
-    columns: 2
+    columns: 4
