@@ -11,3 +11,7 @@ homeassistant/config/secrets.yaml
 
 # compose reads this for ${GLANCE_GITHUB_TOKEN} etc — keep secrets out of git
 .env
+
+# Beszel runtime state — hub DB, agent keys, the hub<->agent unix socket.
+# All generated on the server; nothing here is authored by us.
+beszel/

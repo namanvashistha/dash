@@ -102,6 +102,59 @@ services:
       - docmost-redis:/data
     networks: [docmost]
 
+  # ---- Beszel: lightweight server + container monitoring ----
+  # Hub = web UI + embedded DB. The agent below reports to it over the shared
+  # unix socket in ./beszel/socket, so their traffic never crosses a network.
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    restart: unless-stopped
+    environment:
+      # Public URL — the hub builds absolute links (and the agent install
+      # snippets it shows in the UI) from this.
+      - APP_URL=https://status.namanvashistha.com
+      - TZ=Asia/Kolkata
+    volumes:
+      - ./beszel/data:/beszel_data
+      - ./beszel/socket:/beszel_socket
+    # Loopback-only publish so beszel-agent (host networking, see below) can
+    # reach HUB_URL for self-registration. Caddy still proxies over the
+    # container network via `expose`, not this port.
+    ports:
+      - "127.0.0.1:8090:8090"
+    expose:
+      - "8090"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://status.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 8090}}"
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    # host networking so the agent measures the HOST's cpu/net/disk rather than
+    # a container namespace. It joins no docker network — the hub talks to it
+    # through the shared unix socket instead.
+    network_mode: host
+    volumes:
+      - ./beszel/agent-data:/var/lib/beszel-agent
+      - ./beszel/socket:/beszel_socket
+      # read-only docker socket → per-container stats in the hub UI
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # listen on the shared socket; add this system in the UI with
+      # Host/IP = /beszel_socket/beszel.sock (port field ignored)
+      - LISTEN=/beszel_socket/beszel.sock
+      - HUB_URL=http://localhost:8090
+      # Both come from the hub UI after first boot — set them in .env, then
+      # `docker compose up -d beszel-agent`. Empty defaults keep compose from
+      # erroring before you've had a chance to create them.
+      - TOKEN=${BESZEL_TOKEN:-}
+      - KEY=${BESZEL_KEY:-}
+      - TZ=Asia/Kolkata
+
 networks:
   caddy:
     external: true

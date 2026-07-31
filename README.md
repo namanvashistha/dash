@@ -1,6 +1,6 @@
 # dash
 
-Personal dashboard stack. One repo, one `docker-compose.yml`, three app services
+Personal dashboard stack. One repo, one `docker-compose.yml`, four app services
 behind `caddy-docker-proxy`:
 
 | Service | What | URL |
@@ -8,9 +8,12 @@ behind `caddy-docker-proxy`:
 | `homeassistant` | Home Assistant (home control + dashboards) | home.namanvashistha.com |
 | `glance` | [Glance](https://github.com/glanceapp/glance) personal/info dashboard | dash.namanvashistha.com |
 | `docmost` | [Docmost](https://github.com/docmost/docmost) collaborative wiki / docs | docs.namanvashistha.com |
+| `beszel` | [Beszel](https://github.com/henrygd/beszel) server + container monitoring | status.namanvashistha.com |
 
 `docmost` is backed by internal-only `docmost-db` (Postgres) and `docmost-redis`
 containers — not reverse-proxied, isolated on the internal `docmost` network.
+`beszel` is paired with `beszel-agent`, which runs on host networking (so it
+measures the host, not a container) and is likewise not reverse-proxied.
 
 Deployed by the central `deploy.sh` (in the `namanvashistha.github.io` repo), which
 clones/pulls this repo and runs `docker compose up -d --build`. One compose file
@@ -24,6 +27,8 @@ homeassistant/config/            # HA config (rest is runtime, gitignored)
   configuration.yaml             #   reverse-proxy trust + default_config
   automations.yaml scripts.yaml scenes.yaml
 glance/glance.yml                # Glance dashboard config
+beszel/                          # created on the server, gitignored
+  data/ agent-data/ socket/      #   hub DB, agent keys, hub<->agent socket
 ```
 
 ## Deploy
@@ -49,6 +54,15 @@ then run `deploy.sh` on the server. Live at **home.** and **dash.**namanvashisth
   before first boot (see `.env.example`). Docs live in the Postgres DB; only
   attachments/avatars are on the `docmost-storage` volume. First run auto-creates
   the schema — open `docs.namanvashistha.com` to set up the owner account.
+- **Beszel** is two containers. The hub boots with no config — open
+  `status.namanvashistha.com` to create the owner account. The agent needs
+  `BESZEL_TOKEN` + `BESZEL_KEY` in `.env` (see `.env.example`), which only exist
+  *after* the hub's first boot; until then it restart-loops harmlessly. Once set,
+  `docker compose up -d beszel-agent` and add the system in the UI with
+  **Host/IP = `/beszel_socket/beszel.sock`** (the port field is ignored — hub and
+  agent talk over that shared unix socket, not TCP). The hub also publishes
+  `127.0.0.1:8090` so the host-networked agent can reach `HUB_URL`; public
+  traffic still goes through Caddy.
 - **Networking**: HA uses bridge (to join the `caddy` network), trading away
   mDNS/DHCP auto-discovery. Add integrations by IP/cloud. A Zigbee/Z-Wave USB
   dongle would need `devices:` passthrough (usually host networking) — adjust then.
