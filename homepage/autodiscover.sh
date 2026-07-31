@@ -15,16 +15,35 @@ OUT=/config/services.yaml
 HEADER=/config/services.header.yaml
 INTERVAL="${INTERVAL:-30}"
 
+# Fallback icon when neither a real logo nor a site favicon is found.
+ICON="${ICON:-mdi-application}"
+
 # Space-separated glob patterns of container names to exclude from discovery.
 EXCLUDE="${EXCLUDE:-}"
 
-# Icon = the site's real favicon (what the browser tab shows) via a favicon
-# service — one URL per host, %s is the hostname. The browser fetches it, so the
-# sidecar needs no network. Alternatives you can drop in ICON_URL_TEMPLATE:
-#   DuckDuckGo:  https://icons.duckduckgo.com/ip3/%s.ico
-#   self-hosted: https://%s/favicon.ico   (no third party, but 404s on apps
-#                that don't serve /favicon.ico)
-ICON_URL_TEMPLATE="${ICON_URL_TEMPLATE:-https://www.google.com/s2/favicons?sz=64&domain=%s}"
+# Icon resolution, best -> worst, each verified from here so nothing renders
+# broken (results cached for the container's lifetime):
+#   1. dashboard-icons CDN logo for <container>.png  (crisp, consistent)
+#   2. the site's OWN favicon https://<host>/favicon.ico  (the real browser icon)
+#   3. the placeholder ($ICON)
+# Requires the sidecar to have network egress (see docker-compose.yml).
+ICON_CDN="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png"
+ICON_CACHE=/tmp/iconcache
+: > "$ICON_CACHE"
+resolve_icon() {
+  n=$1; h=$2
+  hit=$(grep "^$n " "$ICON_CACHE" 2>/dev/null | cut -d' ' -f2-)
+  [ -n "$hit" ] && { echo "$hit"; return; }
+  if wget -q -T 4 -O /dev/null "$ICON_CDN/$n.png" 2>/dev/null; then
+    r="$n.png"
+  elif wget -q -T 4 -O /dev/null "https://$h/favicon.ico" 2>/dev/null; then
+    r="https://$h/favicon.ico"
+  else
+    r="$ICON"
+  fi
+  printf '%s %s\n' "$n" "$r" >> "$ICON_CACHE"
+  echo "$r"
+}
 
 emit() {
   tmp=$(mktemp)
@@ -59,7 +78,7 @@ emit() {
       # siteMonitor = Homepage's built-in uptime check: pings the URL and shows
       # online/offline + response time right on the card (no Kuma needed).
       printf '        siteMonitor: https://%s\n' "$host"
-      printf '        icon: "'"$ICON_URL_TEMPLATE"'"\n' "$host"
+      printf '        icon: "%s"\n' "$(resolve_icon "$name" "$host")"
       printf '        server: my-docker\n'
       printf '        container: %s\n' "$name"
     } >> "$tmp"
