@@ -155,6 +155,65 @@ services:
       - KEY=${BESZEL_KEY:-}
       - TZ=Asia/Kolkata
 
+  # ---- Uptime Kuma + AutoKuma: uptime checks, self-discovering ----
+  # Complements Beszel rather than overlapping it: Beszel watches the host,
+  # Kuma watches whether each site actually answers over the public path.
+  #
+  # Nothing here lists endpoints. AutoKuma reads the docker socket and, via the
+  # `!caddy` snippet below, turns every container that already carries a
+  # `caddy:` label into a monitor — creating them as containers appear and
+  # deleting them as containers go away. Spawn a new service anywhere on this
+  # box with a caddy label and it is on the status page within seconds; no
+  # kuma.* labels, no edits here.
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    environment:
+      - TZ=Asia/Kolkata
+    expose:
+      - "3001"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare.
+      # `status.` already belongs to Beszel, so Kuma lives on `uptime.`
+      caddy: http://uptime.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 3001}}"
+
+  autokuma:
+    image: ghcr.io/bigboot/autokuma:latest
+    container_name: autokuma
+    restart: unless-stopped
+    depends_on:
+      - uptime-kuma
+    environment:
+      - AUTOKUMA__KUMA__URL=http://uptime-kuma:3001
+      # Kuma has no API tokens — AutoKuma logs in as a real user. Create the
+      # account on first boot at uptime.namanvashistha.com, then put it in .env.
+      - AUTOKUMA__KUMA__USERNAME=${AUTOKUMA_USERNAME:-}
+      - AUTOKUMA__KUMA__PASSWORD=${AUTOKUMA_PASSWORD:-}
+      # A `!snippet` fires on an EXISTING label key rather than a kuma.* one,
+      # receiving that label's value as args[0] — here `http://home.example.com`
+      # from caddy-docker-proxy. That is what makes this zero-touch: the label
+      # Caddy already needs for routing doubles as the monitor definition.
+      - AUTOKUMA__SNIPPETS__0__KEY=!caddy
+      - |
+        AUTOKUMA__SNIPPETS__0__VALUE=
+        {% set host = args[0] | replace(from="https://", to="") | replace(from="http://", to="") | trim %}
+        {% if host %}
+        {{ container_name }}_http.http.name: {{ container_name }}
+        {{ container_name }}_http.http.url: https://{{ host }}
+        {{ container_name }}_http.http.interval: 120
+        {% endif %}
+      - TZ=Asia/Kolkata
+    volumes:
+      # read-only: AutoKuma only enumerates containers and their labels
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - autokuma-data:/data
+    networks: [caddy]
+
 networks:
   caddy:
     external: true
@@ -167,3 +226,5 @@ volumes:
   docmost-storage:
   docmost-db:
   docmost-redis:
+  uptime-kuma-data:
+  autokuma-data:

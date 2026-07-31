@@ -9,11 +9,14 @@ behind `caddy-docker-proxy`:
 | `glance` | [Glance](https://github.com/glanceapp/glance) personal/info dashboard | dash.namanvashistha.com |
 | `docmost` | [Docmost](https://github.com/docmost/docmost) collaborative wiki / docs | docs.namanvashistha.com |
 | `beszel` | [Beszel](https://github.com/henrygd/beszel) server + container monitoring | status.namanvashistha.com |
+| `uptime-kuma` | [Uptime Kuma](https://github.com/louislam/uptime-kuma) uptime checks, auto-populated | uptime.namanvashistha.com |
 
 `docmost` is backed by internal-only `docmost-db` (Postgres) and `docmost-redis`
 containers — not reverse-proxied, isolated on the internal `docmost` network.
 `beszel` is paired with `beszel-agent`, which runs on host networking (so it
 measures the host, not a container) and is likewise not reverse-proxied.
+`uptime-kuma` is paired with `autokuma`, which discovers monitors from docker
+labels — see the note below.
 
 Deployed by the central `deploy.sh` (in the `namanvashistha.github.io` repo), which
 clones/pulls this repo and runs `docker compose up -d --build`. One compose file
@@ -63,6 +66,23 @@ then run `deploy.sh` on the server. Live at **home.** and **dash.**namanvashisth
   agent talk over that shared unix socket, not TCP). The hub also publishes
   `127.0.0.1:8090` so the host-networked agent can reach `HUB_URL`; public
   traffic still goes through Caddy.
+- **Uptime Kuma is never configured by hand.** `autokuma` watches the docker
+  socket and creates a monitor for every container carrying a `caddy:` label —
+  including services from *other* repos (`chess`, `foodly`, `hyperbole`,
+  `limedb`), since they run on this same host. Spawn a new container with a
+  caddy label and it appears on the status page on its own; remove it and the
+  monitor is deleted. Nothing to register anywhere.
+  The mechanism is an AutoKuma **`!snippet`**, defined inline in
+  `docker-compose.yml`. Unlike a normal snippet, a `!`-prefixed one matches an
+  *existing* label key rather than a `kuma.*` one, and receives that label's
+  value as `args[0]` — so the label Caddy already needs for routing doubles as
+  the monitor definition. That is the whole reason no other repo had to change.
+  Checks target the **public https URL**, exercising Cloudflare → Caddy →
+  container, which is what actually breaks. Editing monitors in the Kuma UI is
+  pointless — AutoKuma reconciles them back. Change the snippet instead.
+  Known blind spot: discovery only sees what is *running*. A container that
+  fails to start has no labels, so it silently vanishes from the dashboard
+  rather than going red. Beszel covers that side.
 - **Networking**: HA uses bridge (to join the `caddy` network), trading away
   mDNS/DHCP auto-discovery. Add integrations by IP/cloud. A Zigbee/Z-Wave USB
   dongle would need `devices:` passthrough (usually host networking) — adjust then.
