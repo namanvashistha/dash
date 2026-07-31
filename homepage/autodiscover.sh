@@ -15,11 +15,31 @@ OUT=/config/services.yaml
 HEADER=/config/services.header.yaml
 INTERVAL="${INTERVAL:-30}"
 
-# One generic placeholder icon for every card — no per-service mapping.
+# Fallback icon used only when no real logo exists for a service.
 ICON="${ICON:-mdi-application}"
 
 # Space-separated glob patterns of container names to exclude from discovery.
 EXCLUDE="${EXCLUDE:-}"
+
+# Auto icons: probe the dashboard-icons CDN for <container>.png. If it exists,
+# use the real logo; otherwise fall back to the placeholder. No hand-maintained
+# map — the CDN decides. Results cached for the container's lifetime. (Requires
+# the sidecar to have network egress; see docker-compose.yml.)
+ICON_CDN="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png"
+ICON_CACHE=/tmp/iconcache
+: > "$ICON_CACHE"
+resolve_icon() {
+  n=$1
+  hit=$(grep "^$n " "$ICON_CACHE" 2>/dev/null | cut -d' ' -f2)
+  if [ -n "$hit" ]; then echo "$hit"; return; fi
+  if wget -q -T 4 -O /dev/null "$ICON_CDN/$n.png" 2>/dev/null; then
+    r="$n.png"
+  else
+    r="$ICON"
+  fi
+  printf '%s %s\n' "$n" "$r" >> "$ICON_CACHE"
+  echo "$r"
+}
 
 emit() {
   tmp=$(mktemp)
@@ -54,7 +74,7 @@ emit() {
       # siteMonitor = Homepage's built-in uptime check: pings the URL and shows
       # online/offline + response time right on the card (no Kuma needed).
       printf '        siteMonitor: https://%s\n' "$host"
-      printf '        icon: %s\n' "$ICON"
+      printf '        icon: %s\n' "$(resolve_icon "$name")"
       printf '        server: my-docker\n'
       printf '        container: %s\n' "$name"
     } >> "$tmp"
