@@ -90,14 +90,11 @@ services:
     restart: unless-stopped
     depends_on:
       - homepage
-    # Needs egress to probe the dashboard-icons CDN for real logos (falls back
-    # to the placeholder when a service has no icon). Still only reads the
-    # docker socket for container data — no inbound exposure.
-    networks: [caddy]
+    # No network needed — it only reads the docker socket (unix). Icons are the
+    # sites' favicons, fetched by the browser, not by this container.
+    network_mode: none
     environment:
       - INTERVAL=30
-      # fallback icon when a service has no logo on the dashboard-icons CDN
-      - ICON=mdi-application
       # container-name globs to keep OFF the dashboard (space-separated)
       - EXCLUDE=homepage foodly*
     volumes:

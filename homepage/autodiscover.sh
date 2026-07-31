@@ -15,31 +15,16 @@ OUT=/config/services.yaml
 HEADER=/config/services.header.yaml
 INTERVAL="${INTERVAL:-30}"
 
-# Fallback icon used only when no real logo exists for a service.
-ICON="${ICON:-mdi-application}"
-
 # Space-separated glob patterns of container names to exclude from discovery.
 EXCLUDE="${EXCLUDE:-}"
 
-# Auto icons: probe the dashboard-icons CDN for <container>.png. If it exists,
-# use the real logo; otherwise fall back to the placeholder. No hand-maintained
-# map — the CDN decides. Results cached for the container's lifetime. (Requires
-# the sidecar to have network egress; see docker-compose.yml.)
-ICON_CDN="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png"
-ICON_CACHE=/tmp/iconcache
-: > "$ICON_CACHE"
-resolve_icon() {
-  n=$1
-  hit=$(grep "^$n " "$ICON_CACHE" 2>/dev/null | cut -d' ' -f2)
-  if [ -n "$hit" ]; then echo "$hit"; return; fi
-  if wget -q -T 4 -O /dev/null "$ICON_CDN/$n.png" 2>/dev/null; then
-    r="$n.png"
-  else
-    r="$ICON"
-  fi
-  printf '%s %s\n' "$n" "$r" >> "$ICON_CACHE"
-  echo "$r"
-}
+# Icon = the site's real favicon (what the browser tab shows) via a favicon
+# service — one URL per host, %s is the hostname. The browser fetches it, so the
+# sidecar needs no network. Alternatives you can drop in ICON_URL_TEMPLATE:
+#   DuckDuckGo:  https://icons.duckduckgo.com/ip3/%s.ico
+#   self-hosted: https://%s/favicon.ico   (no third party, but 404s on apps
+#                that don't serve /favicon.ico)
+ICON_URL_TEMPLATE="${ICON_URL_TEMPLATE:-https://www.google.com/s2/favicons?sz=64&domain=%s}"
 
 emit() {
   tmp=$(mktemp)
@@ -74,7 +59,7 @@ emit() {
       # siteMonitor = Homepage's built-in uptime check: pings the URL and shows
       # online/offline + response time right on the card (no Kuma needed).
       printf '        siteMonitor: https://%s\n' "$host"
-      printf '        icon: %s\n' "$(resolve_icon "$name")"
+      printf '        icon: "'"$ICON_URL_TEMPLATE"'"\n' "$host"
       printf '        server: my-docker\n'
       printf '        container: %s\n' "$name"
     } >> "$tmp"
