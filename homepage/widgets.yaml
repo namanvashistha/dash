@@ -11,10 +11,6 @@
     # and point this at it (Glance mounts / at /mnt/host for the same reason).
     disk: /
 
-- search:
-    provider: duckduckgo
-    target: _blank
-
 - datetime:
     text_size: xl
     format:

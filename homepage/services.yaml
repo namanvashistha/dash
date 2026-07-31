@@ -1,12 +1,4 @@
 # --- auto-discovered from caddy: labels. Managed by homepage-autodiscover; do not edit. ---
 - Discovered:
-    - foodly-app-1:
-        href: https://foodly.namanvashistha.com
-        icon: foodly-app-1.png
-        server: my-docker
-        container: foodly-app-1
-    - homepage:
-        href: https://hub.namanvashistha.com
-        icon: homepage.png
-        server: my-docker
-        container: homepage
+    - none found:
+        description: no containers carry a caddy label

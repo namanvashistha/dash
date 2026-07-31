@@ -15,6 +15,12 @@ OUT=/config/services.yaml
 HEADER=/config/services.header.yaml
 INTERVAL="${INTERVAL:-30}"
 
+# One generic placeholder icon for every card — no per-service mapping.
+ICON="${ICON:-mdi-application}"
+
+# Space-separated glob patterns of container names to exclude from discovery.
+EXCLUDE="${EXCLUDE:-}"
+
 emit() {
   tmp=$(mktemp)
   skip=""
@@ -28,6 +34,12 @@ emit() {
   any=0
   for name in $(docker ps --format '{{.Names}}' | sort); do
     printf '%s\n' "$skip" | grep -qx "$name" && continue
+    # skip excluded container-name globs
+    excluded=0
+    for pat in $EXCLUDE; do
+      case "$name" in $pat) excluded=1; break ;; esac
+    done
+    [ "$excluded" = 1 ] && continue
     label=$(docker inspect -f '{{ index .Config.Labels "caddy" }}' "$name" 2>/dev/null)
     case "$label" in
       http://*|https://*) : ;;
@@ -39,7 +51,10 @@ emit() {
     {
       printf '    - %s:\n' "$name"
       printf '        href: https://%s\n' "$host"
-      printf '        icon: %s.png\n' "$name"
+      # siteMonitor = Homepage's built-in uptime check: pings the URL and shows
+      # online/offline + response time right on the card (no Kuma needed).
+      printf '        siteMonitor: https://%s\n' "$host"
+      printf '        icon: %s\n' "$ICON"
       printf '        server: my-docker\n'
       printf '        container: %s\n' "$name"
     } >> "$tmp"

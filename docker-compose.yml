@@ -94,6 +94,10 @@ services:
     network_mode: none
     environment:
       - INTERVAL=30
+      # generic placeholder icon for every discovered card (no per-service map)
+      - ICON=mdi-application
+      # container-name globs to keep OFF the dashboard (space-separated)
+      - EXCLUDE=homepage foodly*
     volumes:
       # read-only socket → enumerate containers + read their labels
       - /var/run/docker.sock:/var/run/docker.sock:ro
