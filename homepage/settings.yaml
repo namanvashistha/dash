@@ -1,0 +1,23 @@
+# Homepage global settings — https://gethomepage.dev/configs/settings/
+title: Naman's Hub
+description: Home lab launcher
+
+# Dark, calm palette. Change color to any of: slate, gray, zinc, neutral, stone,
+# amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, ...
+theme: dark
+color: slate
+headerStyle: clean
+hideVersion: true
+
+# Group order + how each group renders. Names MUST match the groups in
+# services.yaml, or a group falls back to the default column layout.
+layout:
+  Infrastructure:
+    style: row
+    columns: 2
+  Applications:
+    style: row
+    columns: 2
+  Monitoring:
+    style: row
+    columns: 2

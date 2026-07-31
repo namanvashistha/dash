@@ -1,0 +1,16 @@
+# Bookmarks — https://gethomepage.dev/configs/bookmarks/
+- Developer:
+    - GitHub:
+        - abbr: GH
+          href: https://github.com/namanvashistha
+    - Claude:
+        - abbr: AI
+          href: https://claude.ai
+
+- Infra:
+    - Cloudflare:
+        - abbr: CF
+          href: https://dash.cloudflare.com
+    - Router:
+        - abbr: RT
+          href: http://192.168.1.1

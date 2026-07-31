@@ -1,0 +1,5 @@
+# Docker integration — powers the live status dot + CPU/RAM stats on each card.
+# Homepage reads the read-only socket mounted in docker-compose.yml.
+# https://gethomepage.dev/configs/docker/
+my-docker:
+  socket: /var/run/docker.sock
