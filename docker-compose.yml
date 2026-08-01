@@ -184,25 +184,28 @@ services:
       caddy.reverse_proxy: "{{upstreams 80}}"
 
 networks:
-  # This repo now OWNS the shared network rather than borrowing it. `name:`
-  # pins the real docker name to `caddy` instead of the namespaced `dash_caddy`
-  # compose would otherwise pick, so the other repos keep attaching to it with
-  # `external: true` and needed no changes.
+  # Deliberately external, and staying that way. Six independent compose
+  # projects attach to this network; none of them should own it.
   #
-  # This is what let `docker network create caddy` leave deploy.sh. It also
-  # means dash must be deployed before the repos that attach to it — which is
-  # why dash moved to the top of REPOS there.
+  # Tried `name: caddy` here so compose would create it and deploy.sh could
+  # drop its `docker network create`. Compose refuses to adopt a network it
+  # didn't create:
+  #   network caddy was found but has incorrect label
+  #   com.docker.compose.network set to "" (expected: "caddy")
+  # The only way to make it compose-owned is to stop every container on the box
+  # and `docker network rm caddy` — a full outage to save three lines of bash.
+  # External is also just the better model: no ordering constraint between
+  # repos, no adoption conflicts. deploy.sh creates it.
   caddy:
-    name: caddy
+    external: true
 
 volumes:
   uptime-kuma-data:
   autokuma-data:
-  # Caddy's certificates and state. `name:` pins it to the volume that already
-  # exists from the `docker run -v caddy_data:/data` era — without it compose
-  # would create a fresh `dash_caddy_data` and Caddy would boot with an empty
-  # /data, losing everything it had provisioned. Pinning the name also means
-  # compose creates it when missing, so `docker volume create` left deploy.sh
-  # too (an `external: true` volume is never auto-created; a named one is).
+  # Caddy's certificates and state, from the `docker run -v caddy_data:/data`
+  # era. External for the same reason as the network above — compose applies
+  # the same label check to volumes, so a `name: caddy_data` entry would fail
+  # to adopt the existing one. deploy.sh creates it; external volumes are never
+  # auto-created.
   caddy_data:
-    name: caddy_data
+    external: true
