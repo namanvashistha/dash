@@ -1,32 +1,7 @@
-# Home Assistant runtime state — secrets, database, logs, cache.
-# We only version the config files we author; HA generates the rest at runtime.
-homeassistant/config/*
-!homeassistant/config/configuration.yaml
-!homeassistant/config/automations.yaml
-!homeassistant/config/scripts.yaml
-!homeassistant/config/scenes.yaml
-
-# never commit secrets
-homeassistant/config/secrets.yaml
-
 # compose reads this for ${GLANCE_GITHUB_TOKEN} etc — keep secrets out of git
 .env
 
 # Beszel runtime state — hub DB, agent keys, the hub<->agent unix socket.
 # All generated on the server; nothing here is authored by us.
 beszel/
-
-# Homepage — files generated at runtime, not authored by us. Tracking these
-# caused pull conflicts on every host because they differ per machine:
-#   services.yaml   → rewritten by the homepage-autodiscover sidecar every 30s
-#   logs/           → Homepage's own logs
-#   kubernetes.yaml, custom.css, custom.js, proxied.yml → empty defaults Homepage
-#                     drops in on first boot
-# We only version the config we author: settings/widgets/bookmarks/docker.yaml,
-# autodiscover.sh, and services.header.yaml.example.
-homepage/services.yaml
-homepage/logs/
-homepage/kubernetes.yaml
-homepage/custom.css
-homepage/custom.js
-homepage/proxied.yml
+.DS_Store
