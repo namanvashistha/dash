@@ -1,4 +1,47 @@
 services:
+  # ---- Caddy: the reverse proxy for every service on this host ----
+  # Not just for this repo — chess, foodly, hyperbole and limedb attach to the
+  # `caddy` network created below and are routed by the same container.
+  #
+  # Was ~40 lines of `docker rm -f` + `docker run` + an unquoted $extra_args
+  # string in deploy.sh. That version tore the container down and recreated it
+  # on EVERY deploy of ANY repo, dropping every site on the box for a few
+  # seconds each time. It never needed to — Caddy watches the docker socket and
+  # picks up label changes live, so `compose up -d` leaving it untouched is the
+  # correct behaviour.
+  #
+  # Caveat worth knowing: `docker compose down` in this repo now stops the proxy
+  # and darkens the other repos' sites too. deploy.sh only ever runs `up -d`, so
+  # this only bites if you type `down` by hand.
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:ci-alpine
+    # kept from the `docker run` era so existing docs and muscle memory still
+    # find it; compose would otherwise name it dash-caddy-1
+    container_name: caddy_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # read-write is required — caddy-docker-proxy needs the socket's event
+      # stream to see label changes, not just a container list
+      - /var/run/docker.sock:/var/run/docker.sock
+      - caddy_data:/data
+    labels:
+      # Global options for caddy-docker-proxy are read from labels on its OWN
+      # container. Compose form of the old
+      # `--label caddy= --label caddy.auto_https=off`.
+      #
+      # Hardcoded rather than detected. deploy.sh used to compare `ifconfig.me`
+      # against `dig` on every run to choose between "direct EC2, provision
+      # Let's Encrypt" and "behind Cloudflare, HTTP only" — two network round
+      # trips to re-derive a fact that hasn't changed and won't. If this box
+      # ever stops sitting behind Cloudflare, delete the auto_https line rather
+      # than reintroducing the guess.
+      caddy: ""
+      caddy.auto_https: "off"
+    networks: [caddy]
+
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
   # unix socket in ./beszel/socket, so their traffic never crosses a network.
@@ -141,9 +184,25 @@ services:
       caddy.reverse_proxy: "{{upstreams 80}}"
 
 networks:
+  # This repo now OWNS the shared network rather than borrowing it. `name:`
+  # pins the real docker name to `caddy` instead of the namespaced `dash_caddy`
+  # compose would otherwise pick, so the other repos keep attaching to it with
+  # `external: true` and needed no changes.
+  #
+  # This is what let `docker network create caddy` leave deploy.sh. It also
+  # means dash must be deployed before the repos that attach to it — which is
+  # why dash moved to the top of REPOS there.
   caddy:
-    external: true
+    name: caddy
 
 volumes:
   uptime-kuma-data:
   autokuma-data:
+  # Caddy's certificates and state. `name:` pins it to the volume that already
+  # exists from the `docker run -v caddy_data:/data` era — without it compose
+  # would create a fresh `dash_caddy_data` and Caddy would boot with an empty
+  # /data, losing everything it had provisioned. Pinning the name also means
+  # compose creates it when missing, so `docker volume create` left deploy.sh
+  # too (an `external: true` volume is never auto-created; a named one is).
+  caddy_data:
+    name: caddy_data
