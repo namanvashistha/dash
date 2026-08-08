@@ -11,10 +11,14 @@
 # After that it manages itself — the [[resource_sync]] block below is the same
 # resource, so later changes to it come through git like everything else.
 #
-# `delete = true` on that sync means this file is authoritative: a stack that
-# disappears from here gets DELETED from Komodo on the next sync. That is the
-# behaviour we want (no silent drift), and it is also the sharp edge — deleting
-# a block here tears down the containers.
+# `delete` is OFF, and that is deliberate. Komodo's delete mode is not scoped
+# to the resource types this file mentions: it walks EVERY type and removes
+# anything not declared here (bin/core/src/sync/execute.rs — for each type, any
+# DB resource whose name is absent from the TOML goes into `to_delete`). With
+# `delete = true` the first sync would therefore destroy the two Procedures
+# Core creates on first boot ("Backup Core Database", "Global Auto Update"),
+# which are not declared here.
+# Turn it on only once every resource on the instance is declared in this file.
 #
 # WHAT IS NOT HERE
 # Secrets. Anything sensitive goes in Komodo's Variables & Secrets store and is
@@ -32,8 +36,8 @@ branch = "main"
 # A directory, so new .toml files dropped in here are picked up without
 # editing the sync itself.
 resource_path = ["komodo/syncs"]
-# This file is authoritative — remove a resource here and Komodo removes it.
-delete = true
+# See the note at the top of this file before flipping this on.
+delete = false
 # `managed` would let Komodo WRITE resources back into this file from the UI.
 # Left off deliberately: git is the input, not the output. Turn it on only if
 # you decide the UI should be the place you edit things.
@@ -44,6 +48,80 @@ include_resources = true
 include_variables = false
 include_user_groups = false
 webhook_enabled = true
+
+# ---------------------------------------------------------------------------
+# The server every stack below is deployed to.
+#
+# Core also creates this one itself on startup, from KOMODO_FIRST_SERVER_NAME
+# in dash's docker-compose.yml — but only when NO server exists at all
+# (bin/core/src/startup.rs: `ensure_first_server_and_builder` early-returns the
+# moment it finds one). That makes it a bootstrap convenience, not a source of
+# truth: delete the server in the UI and nothing brings it back until Core
+# restarts. Declaring it here is what actually makes it reproducible.
+#
+# The name must match KOMODO_FIRST_SERVER_NAME and PERIPHERY_CONNECT_AS, which
+# both come from ${KOMODO_SERVER_NAME:-Local} in the compose file. Change one,
+# change all three.
+#
+# No `address`: an empty address means Periphery dials Core
+# (ws://komodo-core:9120), rather than Core reaching out to an agent. That is
+# how this pair is wired.
+# ---------------------------------------------------------------------------
+
+[[server]]
+name = "Local"
+description = "The box itself. Periphery runs beside Core in the dash stack."
+
+[server.config]
+enabled = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+
+# ---------------------------------------------------------------------------
+# Redeploy-on-commit, by polling.
+#
+# ConOps polled each repo every 60s. Komodo's native path is a GitHub webhook,
+# which here has to cross Cloudflare Access — GitHub cannot log in, so it needs
+# a Bypass policy on /listener/* before a push does anything. This procedure is
+# the polling alternative: no webhook, no Access exception, no inbound anything.
+#
+# `DeployStackIfChanged` fetches the repo's latest commit and compares it with
+# what is deployed, redeploying only on an actual difference — so running it
+# every two minutes is cheap. The batch form takes a pattern, so new stacks
+# added to this file are covered without touching the procedure.
+#
+# Cron here is SIX fields: (second, minute, hour, day, month, day-of-week).
+# `0 */2 * * * *` is "every two minutes", not "every two seconds".
+# ---------------------------------------------------------------------------
+
+[[procedure]]
+name = "poll-git-redeploy"
+description = "Every 2 min: redeploy any stack whose git repo has new commits."
+
+[procedure.config]
+schedule_format = "Cron"
+schedule = "0 */2 * * * *"
+schedule_enabled = true
+schedule_timezone = "Asia/Kolkata"
+# Off on purpose: this runs 720 times a day, and an alert per run is noise.
+# Failures still alert via failure_alert.
+schedule_alert = false
+failure_alert = true
+
+[[procedure.config.stage]]
+name = "Redeploy changed stacks"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "BatchDeployStackIfChanged"
+# Matches every stack. Narrow to "chess, foodly, hyperbole, limedb" if a stack
+# ever needs to be excluded from automatic redeploys.
+params.pattern = "*"
 
 # ---------------------------------------------------------------------------
 # Apps. All four were previously deployed by ConOps and are being recreated
@@ -65,15 +143,14 @@ webhook_enabled = true
 #     That flag polls for new *image* versions in a registry. These images
 #     don't come from a registry, so it would never find anything.
 #
-# REDEPLOY ON PUSH — the part that actually matters, and the part that differs
-# from ConOps. ConOps polled git every 60s. Komodo drives this from a webhook,
-# not a poll: `webhook_enabled = true` here, plus the URL Komodo shows on each
-# stack page pasted into the repo's GitHub webhook settings, using
-# KOMODO_WEBHOOK_SECRET from dash's .env. The path is
-#   https://komodo.namanvashistha.com/listener/github/stack/<id>/deploy
-# and Cloudflare Access WILL BLOCK IT unless /listener/* has a Bypass policy —
-# GitHub cannot log in. Komodo verifies the webhook signature itself, so that
-# bypass is safe; without it, pushes silently do nothing.
+# REDEPLOY ON PUSH is handled by the `poll-git-redeploy` procedure above, not
+# per-stack config — same model as ConOps, one poller covering every stack.
+#
+# `webhook_enabled = true` is left on anyway. It costs nothing while unused,
+# and it is half the work already done if you later want instant deploys: add
+# a Cloudflare Access Bypass policy for /listener/*, then paste the URL from
+# each stack's page into that repo's GitHub webhook settings with
+# KOMODO_WEBHOOK_SECRET as the secret. Until then no webhook ever arrives.
 # ---------------------------------------------------------------------------
 
 [[stack]]
