@@ -45,11 +45,20 @@ services:
       caddy.auto_https: "off"
     networks: [caddy]
     healthcheck:
-      # Caddy's admin API, not a site. Hitting :80 is useless here — with no
-      # matching host header the proxy correctly answers 404, which wget reads
-      # as failure. :2019/config/ returns the live config and 200 whenever the
-      # process is actually up and configured.
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/config/"]
+      # TCP, not HTTP, and forced rather than lazy.
+      #
+      # An HTTP probe against :80 fails on a perfectly healthy proxy: with no
+      # matching host header Caddy correctly answers 404, which wget treats as
+      # an error. The obvious alternative — the admin API on :2019 — is not
+      # reachable: `wget http://localhost:2019/config/` from inside this
+      # container gets connection refused, because caddy-docker-proxy does not
+      # serve it there despite the image EXPOSEing the port. Probing it is what
+      # had this container reporting unhealthy.
+      #
+      # A TCP accept on :80 is the honest signal: the proxy is listening and
+      # routing. Whether a given host matches is a config question, not a
+      # liveness one.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "80"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -157,10 +166,12 @@ services:
   # `compose up`, so the two cannot drift far.
   #
   # It runs to completion and stays Exited (0). That is the intended end state,
-  # not a failure — `restart: "no"` is what keeps it that way, and it matters:
-  # deploy.sh used to run `docker update --restart unless-stopped` across every
-  # container it deployed, which would have put this one in a permanent restart
-  # loop. That line is gone from deploy.sh now; do not reintroduce it.
+  # not a failure, and `restart: "no"` is what keeps it that way.
+  #
+  # WARNING: deploy.sh runs `docker compose ps -q | xargs docker update --restart
+  # unless-stopped` over every container in this project. That will put this
+  # one — designed to exit — into a permanent restart loop. Remove that line
+  # from deploy.sh; every service here declares its own policy already.
   #
   # Re-run alone, without touching the rest of the stack:
   #   docker compose run --rm conops-register
@@ -183,53 +194,6 @@ services:
     restart: "no"
     networks: [caddy]
 
-  # ---- Portainer CE: evaluation, running alongside ConOps ----
-  # Here to be assessed, not yet to replace anything. It discovers the existing
-  # containers read-only, so it changes nothing until a stack is deployed
-  # THROUGH it — do not deploy chess/foodly/hyperbole/limedb here while ConOps
-  # still owns them, or both will manage the same project and fight, the same
-  # way the duplicate ConOps registrations did.
-  #
-  # It cannot take those four over as they stand regardless: Portainer does not
-  # implement `build:` for git-deployed stacks (docs.portainer.io FAQ), and all
-  # four compose files still build from source. That only becomes possible after
-  # builds move to GitHub Actions and the compose files reference ghcr.io images.
-  # This is here to decide whether that project is worth starting.
-  #
-  # What to evaluate: git-deployed stacks, GitOps polling vs webhook, re-pull
-  # image + force redeployment, the built-in auth, and whether stack project
-  # names stay stable (they do — named after the stack, not a random UUID).
-  portainer:
-    # `lts` rather than a digest, unlike conops: this is a maintained project
-    # where tracking security releases is the safer default. Nothing auto-pulls
-    # anyway — deploy.sh runs `compose up -d` without `--pull always`, so the
-    # image only moves when you ask it to.
-    image: portainer/portainer-ce:lts
-    container_name: portainer
-    restart: unless-stopped
-    volumes:
-      # read-write: Portainer creates and removes containers, same as conops
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    environment:
-      - TZ=Asia/Kolkata
-    # 9000 is the plain-HTTP UI. Caddy terminates in front of it, and 9443
-    # (Portainer's own TLS) is unnecessary behind the tunnel. 8000 is the Edge
-    # agent tunnel — not needed for a single local host.
-    expose:
-      - "9000"
-    networks: [caddy]
-    labels:
-      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
-      caddy: http://portainer.namanvashistha.com
-      caddy.reverse_proxy: "{{upstreams 9000}}"
-      # The other half of the CSRF fix, and the more correct one. TLS ends at
-      # Cloudflare, so cloudflared -> Caddy is plaintext and Caddy would
-      # otherwise forward X-Forwarded-Proto: http. Portainer then believes it is
-      # serving HTTP while the browser's Origin says HTTPS, and the mismatch is
-      # what fails the check. The client's real scheme IS https, so say so.
-      caddy.reverse_proxy.header_up: "X-Forwarded-Proto https"
-
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
   # unix socket in ./beszel/socket, so their traffic never crosses a network.
@@ -246,8 +210,10 @@ services:
       - ./beszel/data:/beszel_data
       - ./beszel/socket:/beszel_socket
     # Loopback-only publish so beszel-agent (host networking, see below) can
-    # reach HUB_URL for self-registration. Caddy still proxies over the
-    # container network via `expose`, not this port.
+    # reach HUB_URL for self-registration. That is the only reason it exists —
+    # Caddy reaches the hub over the container network using the port in the
+    # reverse_proxy label below, not through this published port and not via
+    # `expose`, which is documentation rather than a mechanism.
     ports:
       - "127.0.0.1:8090:8090"
     expose:
@@ -407,9 +373,6 @@ volumes:
   # ConOps' SQLite database and its registered-app config. Losing this means
   # re-registering the four stacks, not losing the stacks themselves.
   conops_data:
-  # Portainer's database, users and stack definitions. Delete this to reset the
-  # evaluation, including the admin account.
-  portainer_data:
   # Caddy's certificates and state, from the `docker run -v caddy_data:/data`
   # era. External for the same reason as the network above — compose applies
   # the same label check to volumes, so a `name: caddy_data` entry would fail
