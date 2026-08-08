@@ -213,12 +213,6 @@ services:
       - portainer_data:/data
     environment:
       - TZ=Asia/Kolkata
-      # Portainer 2.27.7+ validates Origin/Referer for CSRF and rejects anything
-      # it does not consider its own origin, which is every reverse-proxied
-      # setup. Symptom is a request that hangs forever while the log says
-      # `error="origin invalid" ... trusted_origins=[]`.
-      # Comma-separated; `*` is explicitly not supported.
-      - TRUSTED_ORIGINS=https://portainer.namanvashistha.com
     # 9000 is the plain-HTTP UI. Caddy terminates in front of it, and 9443
     # (Portainer's own TLS) is unnecessary behind the tunnel. 8000 is the Edge
     # agent tunnel — not needed for a single local host.
