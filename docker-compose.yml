@@ -90,6 +90,50 @@ services:
     # add it in Uptime Kuma by hand as http://cloudflared:2000/ready if you
     # want the tunnel itself on the status page.
 
+  # ---- ConOps: GitOps controller for the app stacks ----
+  # Watches chess, foodly, hyperbole and limedb on GitHub, redeploys them on new
+  # commits, and restarts containers it finds missing, exited or unhealthy.
+  # Those four came out of deploy.sh's REPOS list when this went in.
+  #
+  # dash and text-to-image-bot deliberately stay in deploy.sh: ConOps clones into
+  # its own runtime dir, so a stack that needs a gitignored .env (both) or a
+  # repo-relative bind mount (this file's ./beszel and ./ecards) has no way to
+  # find them. Adding either here would half-work, which is worse than not.
+  #
+  # SECURITY: ConOps ships no authentication (upstream issue #5, open) and holds
+  # the docker socket, so an open dashboard is remote code execution on this box,
+  # not merely an information leak. The hostname below is public; access is gated
+  # by Cloudflare Access on conops.namanvashistha.com. If that policy is ever
+  # removed, take this label off in the same commit.
+  conops:
+    # Pinned by digest, not a tag. Upstream is one contributor at v0.0.5 with no
+    # release since 2026-02-17 — a floating tag on a project moving that
+    # unpredictably, holding the docker socket, is not a risk worth taking.
+    # This digest is v0.0.5. Bump deliberately, never automatically.
+    image: anurag1201/conops@sha256:e9a2970f1c4b912807b001a99058b1bb295bcdf396df55389f1778de60135d71
+    container_name: conops
+    restart: unless-stopped
+    environment:
+      - CONOPS_RUNTIME_DIR=/opt/conops-runtime
+      - TZ=Asia/Kolkata
+    volumes:
+      # Same path on both sides, and that is load-bearing: ConOps shells out to
+      # `docker compose` against the HOST daemon, so every path it passes has to
+      # resolve identically inside this container and outside it. /opt rather
+      # than the upstream README's /tmp, which systemd-tmpfiles will reap.
+      - /opt/conops-runtime:/opt/conops-runtime
+      # SQLite lives here — no separate database container.
+      - conops_data:/data
+      # read-write: ConOps creates, recreates and removes containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8080"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://conops.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
   # unix socket in ./beszel/socket, so their traffic never crosses a network.
@@ -264,6 +308,9 @@ networks:
 volumes:
   uptime-kuma-data:
   autokuma-data:
+  # ConOps' SQLite database and its registered-app config. Losing this means
+  # re-registering the four stacks, not losing the stacks themselves.
+  conops_data:
   # Caddy's certificates and state, from the `docker run -v caddy_data:/data`
   # era. External for the same reason as the network above — compose applies
   # the same label check to volumes, so a `name: caddy_data` entry would fail
