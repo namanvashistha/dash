@@ -1,22 +1,20 @@
 services:
   # ---- Caddy: the reverse proxy for every service on this host ----
   # Not just for this repo — chess, foodly, hyperbole and limedb attach to the
-  # `caddy` network created below and are routed by the same container.
+  # external `caddy` network and are routed by this same container, wherever
+  # they are deployed from.
   #
-  # Was ~40 lines of `docker rm -f` + `docker run` + an unquoted $extra_args
-  # string in deploy.sh. That version tore the container down and recreated it
-  # on EVERY deploy of ANY repo, dropping every site on the box for a few
-  # seconds each time. It never needed to — Caddy watches the docker socket and
-  # picks up label changes live, so `compose up -d` leaving it untouched is the
-  # correct behaviour.
+  # Caddy watches the docker socket and picks up label changes live, so leaving
+  # it untouched across deploys is correct; it does not need recreating to see
+  # a new service.
   #
-  # Caveat worth knowing: `docker compose down` in this repo now stops the proxy
-  # and darkens the other repos' sites too. deploy.sh only ever runs `up -d`, so
+  # Caveat worth knowing: `docker compose down` in this repo stops the proxy and
+  # darkens the other repos' sites too. deploy.sh only ever runs `up -d`, so
   # this only bites if you type `down` by hand.
   caddy:
     image: lucaslorentz/caddy-docker-proxy:ci-alpine
-    # kept from the `docker run` era so existing docs and muscle memory still
-    # find it; compose would otherwise name it dash-caddy-1
+    # pinned so docs and muscle memory keep working; compose would otherwise
+    # name it dash-caddy-1
     container_name: caddy_proxy
     restart: unless-stopped
     # No `ports:` on purpose. Ingress now arrives through the cloudflared
@@ -32,32 +30,25 @@ services:
       - caddy_data:/data
     labels:
       # Global options for caddy-docker-proxy are read from labels on its OWN
-      # container. Compose form of the old
-      # `--label caddy= --label caddy.auto_https=off`.
+      # container, which is why these sit here and not in a Caddyfile.
       #
-      # Hardcoded rather than detected. deploy.sh used to compare `ifconfig.me`
-      # against `dig` on every run to choose between "direct EC2, provision
-      # Let's Encrypt" and "behind Cloudflare, HTTP only" — two network round
-      # trips to re-derive a fact that hasn't changed and won't. If this box
-      # ever stops sitting behind Cloudflare, delete the auto_https line rather
-      # than reintroducing the guess.
+      # auto_https is off because Cloudflare terminates TLS at its edge; this
+      # box only ever serves plaintext behind the tunnel. If it ever stops
+      # sitting behind Cloudflare, delete that line so Caddy provisions its own
+      # certificates again.
       caddy: ""
       caddy.auto_https: "off"
+      # Exempt from Komodo's StopAllContainers. Stopping the proxy takes every
+      # site on the box down at once, which is never what that button meant.
+      komodo.skip:
     networks: [caddy]
     healthcheck:
-      # TCP, not HTTP, and forced rather than lazy.
-      #
-      # An HTTP probe against :80 fails on a perfectly healthy proxy: with no
-      # matching host header Caddy correctly answers 404, which wget treats as
-      # an error. The obvious alternative — the admin API on :2019 — is not
-      # reachable: `wget http://localhost:2019/config/` from inside this
-      # container gets connection refused, because caddy-docker-proxy does not
-      # serve it there despite the image EXPOSEing the port. Probing it is what
-      # had this container reporting unhealthy.
-      #
-      # A TCP accept on :80 is the honest signal: the proxy is listening and
-      # routing. Whether a given host matches is a config question, not a
-      # liveness one.
+      # TCP rather than HTTP, because both HTTP options are wrong here. A probe
+      # against :80 gets a 404 on a healthy proxy (no matching host header),
+      # which wget reports as failure. The admin API on :2019 refuses
+      # connections from inside this container despite the image EXPOSEing the
+      # port. A TCP accept is the honest liveness signal; whether a given host
+      # matches is a config question, not a liveness one.
       test: ["CMD", "nc", "-z", "127.0.0.1", "80"]
       interval: 30s
       timeout: 5s
@@ -93,11 +84,14 @@ services:
     expose:
       - "2000"
     networks: [caddy]
-    # No healthcheck: the image is distroless-style and ships no shell, wget or
-    # curl, so there is nothing to run the probe with. `--metrics` above exposes
-    # /ready on :2000 instead — AutoKuma won't pick it up (no caddy label), so
-    # add it in Uptime Kuma by hand as http://cloudflared:2000/ready if you
-    # want the tunnel itself on the status page.
+    labels:
+      # Exempt from Komodo's StopAllContainers — this is the only ingress onto
+      # the box, including to Komodo's own UI. Stopping it locks you out.
+      komodo.skip:
+    # No healthcheck: this image ships no shell or HTTP client to run a probe
+    # with. `--metrics` above serves /ready on :2000 instead. AutoKuma won't
+    # discover it (no caddy label), so add it in Uptime Kuma by hand as
+    # http://cloudflared:2000/ready to get the tunnel on the status page.
 
   # ---- ConOps: GitOps controller for the app stacks ----
   # Watches chess, foodly, hyperbole and limedb on GitHub, redeploys them on new
@@ -110,10 +104,14 @@ services:
   # find them. Adding either here would half-work, which is worse than not.
   #
   # SECURITY: ConOps ships no authentication (upstream issue #5, open) and holds
-  # the docker socket, so an open dashboard is remote code execution on this box,
-  # not merely an information leak. The hostname below is public; access is gated
-  # by Cloudflare Access on conops.namanvashistha.com. If that policy is ever
-  # removed, take this label off in the same commit.
+  # the docker socket. Anyone who reaches the UI or API can register an app
+  # pointing at any compose file and have this box run it — remote code
+  # execution, not merely an exposed dashboard.
+  #
+  # The label below publishes it at conops.namanvashistha.com. That hostname
+  # REQUIRES a Cloudflare Access policy in front of it (Zero Trust -> Access ->
+  # Applications -> Self-hosted). Verify the policy exists before trusting this
+  # comment — if it does not, remove the label until it does.
   conops:
     # Pinned by digest, not a tag. Upstream is one contributor at v0.0.5 with no
     # release since 2026-02-17 — a floating tag on a project moving that
@@ -193,6 +191,166 @@ services:
     command: python /conops/register.py
     restart: "no"
     networks: [caddy]
+
+  # ---- Komodo: the intended replacement for ConOps (and for deploy.sh) ----
+  # Running SIDE BY SIDE with ConOps on purpose. Nothing is migrated yet.
+  #
+  # Why bother, when ConOps already redeploys on commit: three things ConOps
+  # cannot do, all of which have already cost time here.
+  #   1. Declarative state in git. ConOps' app list lives only in its SQLite
+  #      volume, which is why conops/register.py exists at all. Komodo has
+  #      Resource Sync — TOML in a repo, applied natively.
+  #   2. Stable compose project names. ConOps names projects after an app UUID,
+  #      so re-registering an app orphans its named volumes (this is how a
+  #      Minecraft world gets lost). Komodo names projects after the stack.
+  #   3. Auth. ConOps' API is unauthenticated and holds the docker socket;
+  #      only a Cloudflare Access policy stands in front of it. Komodo has
+  #      real local/OIDC/OAuth login of its own.
+  # It also handles per-app secrets natively (Variables + Secrets, interpolated
+  # into the compose file), which ConOps can only do through API calls.
+  #
+  # THE ONE RULE while both are running: no app may be registered in both.
+  # ConOps and Komodo would each run `compose up` against it on their own
+  # schedule, from different clone directories, and fight over the caddy labels.
+  # Migrate one app at a time — delete from ConOps FIRST, then add to Komodo.
+  #
+  # Mongo rather than SQLite, which is not an option any more: Komodo's SQLite
+  # backend was FerretDB v1, dropped in v1.18.0. Current choices are Mongo or
+  # Postgres+FerretDB. If this box's CPU lacks AVX (`grep -o avx /proc/cpuinfo
+  # | head -1` prints nothing) the mongo image will not start, and the fix is
+  # the Postgres+FerretDB pair from https://komo.do/docs/setup/ferretdb.
+  komodo-mongo:
+    # `mongo` unpinned is upstream's own default here. Pin it the first time an
+    # upgrade surprises you.
+    image: mongo
+    container_name: komodo-mongo
+    restart: unless-stopped
+    # 256 MB cache instead of the default (half of RAM, minus 1 GB). Komodo's
+    # working set is tiny — resource configs and update history — and the
+    # default sizing on a shared homelab box is what makes people think Mongo
+    # is heavy.
+    command: --quiet --wiredTigerCacheSizeGB 0.25
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${KOMODO_DB_USERNAME:-komodo}
+      MONGO_INITDB_ROOT_PASSWORD: ${KOMODO_DB_PASSWORD:-}
+      TZ: Asia/Kolkata
+    volumes:
+      - komodo-mongo-data:/data/db
+      - komodo-mongo-config:/data/configdb
+    # Private to Komodo. The database has no business being resolvable from the
+    # shared caddy network, where every other project on this box can reach it.
+    networks: [komodo]
+    labels:
+      # Komodo's StopAllContainers action skips anything carrying this label.
+      # On its own database that is not optional.
+      komodo.skip:
+
+  komodo-core:
+    image: ghcr.io/moghtech/komodo-core:${KOMODO_IMAGE_TAG:-2}
+    container_name: komodo-core
+    # Core spawns child processes; without an init they accumulate as zombies.
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - komodo-mongo
+    environment:
+      # -- database --
+      - KOMODO_DATABASE_ADDRESS=komodo-mongo:27017
+      - KOMODO_DATABASE_USERNAME=${KOMODO_DB_USERNAME:-komodo}
+      - KOMODO_DATABASE_PASSWORD=${KOMODO_DB_PASSWORD:-}
+      # -- identity --
+      # Not cosmetic: Komodo builds the webhook URLs it hands you (and any
+      # OAuth callbacks) from this, so a wrong value produces webhooks that
+      # GitHub cannot reach.
+      - KOMODO_HOST=https://komodo.namanvashistha.com
+      - KOMODO_TITLE=Komodo
+      # -- auth --
+      # Core and Periphery authenticate to each other with a keypair generated
+      # on first boot into the shared `komodo-keys` volume. Lose that volume and
+      # they stop trusting each other until both are recreated together.
+      - KOMODO_PERIPHERY_PUBLIC_KEY=file:/config/keys/periphery.pub
+      - KOMODO_LOCAL_AUTH=true
+      - KOMODO_INIT_ADMIN_USERNAME=${KOMODO_ADMIN_USERNAME:-admin}
+      - KOMODO_INIT_ADMIN_PASSWORD=${KOMODO_ADMIN_PASSWORD:-}
+      # This box is single-admin and publicly routed. Signups off means a
+      # stranger who gets past Cloudflare Access still cannot create an account.
+      - KOMODO_DISABLE_USER_REGISTRATION=true
+      - KOMODO_ENABLE_NEW_USERS=false
+      - KOMODO_JWT_SECRET=${KOMODO_JWT_SECRET:-}
+      - KOMODO_WEBHOOK_SECRET=${KOMODO_WEBHOOK_SECRET:-}
+      # -- polling --
+      # How often Komodo re-checks git for commits. Upstream default is 1-hr,
+      # against ConOps' 1m — that gap is the whole "did my push deploy?" feel.
+      # 5-min is the fastest option Komodo offers. For instant deploys, add the
+      # webhook Komodo shows you on the stack page to the repo on GitHub; this
+      # poll is then just the safety net for missed webhooks.
+      - KOMODO_RESOURCE_POLL_INTERVAL=5-min
+      - TZ=Asia/Kolkata
+    volumes:
+      - komodo-keys:/config/keys
+      # Dated database dumps, on the host rather than in a volume so they
+      # survive `docker volume prune` — the exact accident they exist for.
+      - /etc/komodo/backups:/backups
+    # No host ports, same as everything else here: ingress is cloudflared ->
+    # caddy. Upstream's compose publishes 9120; that would put an admin panel
+    # holding the docker socket on the LAN as well.
+    expose:
+      - "9120"
+    # Both networks: `komodo` to reach Mongo and Periphery, `caddy` to be
+    # routed. Only this service bridges the two.
+    networks: [komodo, caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare.
+      #
+      # Komodo has its own login, unlike ConOps — but put a Cloudflare Access
+      # policy in front of this hostname anyway (Zero Trust -> Access ->
+      # Applications). Defence in depth for a UI that can execute anything on
+      # this box.
+      caddy: http://komodo.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 9120}}"
+      komodo.skip:
+
+  # Periphery is the agent that actually touches docker. Core never does — it
+  # sends instructions here. One agent per managed host; this one manages the
+  # host it runs on, and a second box would run only this service, pointed at
+  # this Core.
+  komodo-periphery:
+    image: ghcr.io/moghtech/komodo-periphery:${KOMODO_IMAGE_TAG:-2}
+    container_name: komodo-periphery
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - komodo-core
+    environment:
+      - PERIPHERY_CORE_ADDRESS=ws://komodo-core:9120
+      # Must equal the server name Core created on first boot, or Core has
+      # nothing to attach this agent to and the server shows Disabled.
+      - PERIPHERY_CONNECT_AS=${KOMODO_SERVER_NAME:-Local}
+      - PERIPHERY_CORE_PUBLIC_KEYS=file:/config/keys/core.pub
+      # Same path inside and outside the container, and that is load-bearing
+      # for the same reason /opt/conops-runtime is: Periphery shells out to
+      # `docker compose` against the HOST daemon, so every path it passes has
+      # to resolve identically on both sides.
+      # See https://github.com/moghtech/komodo/discussions/180.
+      - PERIPHERY_ROOT_DIRECTORY=/etc/komodo
+      # Without this the host disk shows up as the sum of every mount Periphery
+      # can see, which is wildly over-reported. /etc/hostname resolves to the
+      # real root filesystem.
+      - PERIPHERY_INCLUDE_DISK_MOUNTS=/etc/hostname
+      - TZ=Asia/Kolkata
+    volumes:
+      - komodo-keys:/config/keys
+      # read-write: this is the service that creates and destroys containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # host process visibility, for the system stats in the UI
+      - /proc:/proc
+      # Every stack Komodo clones and every compose file it runs lives under
+      # here. This is the directory that has to be identical on both sides.
+      - /etc/komodo:/etc/komodo
+    # No caddy network: nothing should reach the agent except Core.
+    networks: [komodo]
+    labels:
+      komodo.skip:
 
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
@@ -352,20 +510,23 @@ services:
       start_period: 5s
 
 networks:
-  # Deliberately external, and staying that way. Six independent compose
-  # projects attach to this network; none of them should own it.
+  # Deliberately external, and staying that way. Several independent compose
+  # projects attach to this network — some from deploy.sh, some from ConOps —
+  # and none of them should own it.
   #
-  # Tried `name: caddy` here so compose would create it and deploy.sh could
-  # drop its `docker network create`. Compose refuses to adopt a network it
-  # didn't create:
+  # Do not try `name: caddy` here to let compose create it. Compose refuses to
+  # adopt a network it didn't create:
   #   network caddy was found but has incorrect label
   #   com.docker.compose.network set to "" (expected: "caddy")
-  # The only way to make it compose-owned is to stop every container on the box
-  # and `docker network rm caddy` — a full outage to save three lines of bash.
-  # External is also just the better model: no ordering constraint between
-  # repos, no adoption conflicts. deploy.sh creates it.
+  # Making it compose-owned would mean stopping every container on the box to
+  # recreate the network. deploy.sh creates it instead.
   caddy:
     external: true
+
+  # Private to this project, and compose-owned (unlike `caddy` above) because
+  # nothing outside dash has any reason to join it. Carries Core <-> Mongo and
+  # Core <-> Periphery only.
+  komodo:
 
 volumes:
   uptime-kuma-data:
@@ -373,10 +534,15 @@ volumes:
   # ConOps' SQLite database and its registered-app config. Losing this means
   # re-registering the four stacks, not losing the stacks themselves.
   conops_data:
-  # Caddy's certificates and state, from the `docker run -v caddy_data:/data`
-  # era. External for the same reason as the network above — compose applies
-  # the same label check to volumes, so a `name: caddy_data` entry would fail
-  # to adopt the existing one. deploy.sh creates it; external volumes are never
-  # auto-created.
+  # Komodo's database: every resource definition, user, and update record.
+  komodo-mongo-data:
+  komodo-mongo-config:
+  # The Core <-> Periphery keypair, generated on first boot. Deleting this
+  # volume breaks the trust between them until BOTH containers are recreated.
+  komodo-keys:
+  # Caddy's state. External for the same reason as the network above: compose
+  # applies the same adoption check to volumes, so declaring it normally here
+  # would fail to pick up the existing one. deploy.sh creates it — external
+  # volumes are never auto-created.
   caddy_data:
     external: true
