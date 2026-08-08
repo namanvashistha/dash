@@ -126,6 +126,11 @@ services:
       - conops_data:/data
       # read-write: ConOps creates, recreates and removes containers
       - /var/run/docker.sock:/var/run/docker.sock
+    # No `ports:`, deliberately. This API is unauthenticated and holds the
+    # docker socket, so the fewer places it answers from the better: not the
+    # host, not the LAN, only the `caddy` network. Caddy proxies it out to
+    # conops.namanvashistha.com where Cloudflare Access does the gating, and
+    # conops-register below reaches it from inside this same network.
     expose:
       - "8080"
     networks: [caddy]
@@ -133,6 +138,50 @@ services:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://conops.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8080}}"
+    healthcheck:
+      # No dedicated /health endpoint upstream. The apps list is the next best
+      # thing: 200 only once the server is listening AND the SQLite store
+      # answers, which is exactly the readiness conops-register has to wait for.
+      # wget is busybox's, from the alpine:3.19 base.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/v1/apps/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---- ConOps registration: applies conops/apps.json, then exits ----
+  # ConOps has no declarative bootstrap — its app list lives only in the SQLite
+  # database inside conops_data, written through the API. Lose that volume and
+  # the set of deployed stacks exists nowhere in git. This one-shot makes
+  # conops/apps.json the checked-in desired state and applies it on every
+  # `compose up`, so the two cannot drift far.
+  #
+  # It runs to completion and stays Exited (0). That is the intended end state,
+  # not a failure — `restart: "no"` is what keeps it that way, and it matters:
+  # deploy.sh used to run `docker update --restart unless-stopped` across every
+  # container it deployed, which would have put this one in a permanent restart
+  # loop. That line is gone from deploy.sh now; do not reintroduce it.
+  #
+  # Re-run alone, without touching the rest of the stack:
+  #   docker compose run --rm conops-register
+  conops-register:
+    # Nothing is installed into this container — register.py is standard library
+    # only, precisely so the tool image can stay stock.
+    image: python:3.13-alpine
+    container_name: conops-register
+    depends_on:
+      conops:
+        # not service_started: on a cold boot the container is up well before
+        # the API answers, and registration against a dead API just fails
+        condition: service_healthy
+    volumes:
+      - ./conops:/conops:ro
+    environment:
+      - CONOPS_URL=http://conops:8080
+      - TZ=Asia/Kolkata
+    command: python /conops/register.py
+    restart: "no"
+    networks: [caddy]
 
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
