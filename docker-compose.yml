@@ -93,126 +93,31 @@ services:
     # discover it (no caddy label), so add it in Uptime Kuma by hand as
     # http://cloudflared:2000/ready to get the tunnel on the status page.
 
-  # ---- ConOps: GitOps controller for the app stacks ----
-  # Watches chess, foodly, hyperbole and limedb on GitHub, redeploys them on new
-  # commits, and restarts containers it finds missing, exited or unhealthy.
-  # Those four came out of deploy.sh's REPOS list when this went in.
+  # ---- Komodo: the deploy controller for chess, foodly, hyperbole, limedb ----
+  # Replaced ConOps, which was removed from this file in the same commit. The
+  # four apps were recreated from scratch rather than migrated — their ConOps
+  # volumes were orphaned, not imported.
   #
-  # dash and text-to-image-bot deliberately stay in deploy.sh: ConOps clones into
-  # its own runtime dir, so a stack that needs a gitignored .env (both) or a
-  # repo-relative bind mount (this file's ./beszel and ./ecards) has no way to
-  # find them. Adding either here would half-work, which is worse than not.
-  #
-  # SECURITY: ConOps ships no authentication (upstream issue #5, open) and holds
-  # the docker socket. Anyone who reaches the UI or API can register an app
-  # pointing at any compose file and have this box run it — remote code
-  # execution, not merely an exposed dashboard.
-  #
-  # The label below publishes it at conops.namanvashistha.com. That hostname
-  # REQUIRES a Cloudflare Access policy in front of it (Zero Trust -> Access ->
-  # Applications -> Self-hosted). Verify the policy exists before trusting this
-  # comment — if it does not, remove the label until it does.
-  conops:
-    # Pinned by digest, not a tag. Upstream is one contributor at v0.0.5 with no
-    # release since 2026-02-17 — a floating tag on a project moving that
-    # unpredictably, holding the docker socket, is not a risk worth taking.
-    # This digest is v0.0.5. Bump deliberately, never automatically.
-    image: anurag1201/conops@sha256:e9a2970f1c4b912807b001a99058b1bb295bcdf396df55389f1778de60135d71
-    container_name: conops
-    restart: unless-stopped
-    environment:
-      - CONOPS_RUNTIME_DIR=/opt/conops-runtime
-      - TZ=Asia/Kolkata
-    volumes:
-      # Same path on both sides, and that is load-bearing: ConOps shells out to
-      # `docker compose` against the HOST daemon, so every path it passes has to
-      # resolve identically inside this container and outside it. /opt rather
-      # than the upstream README's /tmp, which systemd-tmpfiles will reap.
-      - /opt/conops-runtime:/opt/conops-runtime
-      # SQLite lives here — no separate database container.
-      - conops_data:/data
-      # read-write: ConOps creates, recreates and removes containers
-      - /var/run/docker.sock:/var/run/docker.sock
-    # No `ports:`, deliberately. This API is unauthenticated and holds the
-    # docker socket, so the fewer places it answers from the better: not the
-    # host, not the LAN, only the `caddy` network. Caddy proxies it out to
-    # conops.namanvashistha.com where Cloudflare Access does the gating, and
-    # conops-register below reaches it from inside this same network.
-    expose:
-      - "8080"
-    networks: [caddy]
-    labels:
-      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
-      caddy: http://conops.namanvashistha.com
-      caddy.reverse_proxy: "{{upstreams 8080}}"
-    healthcheck:
-      # No dedicated /health endpoint upstream. The apps list is the next best
-      # thing: 200 only once the server is listening AND the SQLite store
-      # answers, which is exactly the readiness conops-register has to wait for.
-      # wget is busybox's, from the alpine:3.19 base.
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/v1/apps/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  # ---- ConOps registration: applies conops/apps.json, then exits ----
-  # ConOps has no declarative bootstrap — its app list lives only in the SQLite
-  # database inside conops_data, written through the API. Lose that volume and
-  # the set of deployed stacks exists nowhere in git. This one-shot makes
-  # conops/apps.json the checked-in desired state and applies it on every
-  # `compose up`, so the two cannot drift far.
-  #
-  # It runs to completion and stays Exited (0). That is the intended end state,
-  # not a failure, and `restart: "no"` is what keeps it that way.
-  #
-  # WARNING: deploy.sh runs `docker compose ps -q | xargs docker update --restart
-  # unless-stopped` over every container in this project. That will put this
-  # one — designed to exit — into a permanent restart loop. Remove that line
-  # from deploy.sh; every service here declares its own policy already.
-  #
-  # Re-run alone, without touching the rest of the stack:
-  #   docker compose run --rm conops-register
-  conops-register:
-    # Nothing is installed into this container — register.py is standard library
-    # only, precisely so the tool image can stay stock.
-    image: python:3.13-alpine
-    container_name: conops-register
-    depends_on:
-      conops:
-        # not service_started: on a cold boot the container is up well before
-        # the API answers, and registration against a dead API just fails
-        condition: service_healthy
-    volumes:
-      - ./conops:/conops:ro
-    environment:
-      - CONOPS_URL=http://conops:8080
-      - TZ=Asia/Kolkata
-    command: python /conops/register.py
-    restart: "no"
-    networks: [caddy]
-
-  # ---- Komodo: the intended replacement for ConOps (and for deploy.sh) ----
-  # Running SIDE BY SIDE with ConOps on purpose. Nothing is migrated yet.
-  #
-  # Why bother, when ConOps already redeploys on commit: three things ConOps
-  # cannot do, all of which have already cost time here.
-  #   1. Declarative state in git. ConOps' app list lives only in its SQLite
-  #      volume, which is why conops/register.py exists at all. Komodo has
-  #      Resource Sync — TOML in a repo, applied natively.
-  #   2. Stable compose project names. ConOps names projects after an app UUID,
-  #      so re-registering an app orphans its named volumes (this is how a
-  #      Minecraft world gets lost). Komodo names projects after the stack.
-  #   3. Auth. ConOps' API is unauthenticated and holds the docker socket;
-  #      only a Cloudflare Access policy stands in front of it. Komodo has
-  #      real local/OIDC/OAuth login of its own.
+  # Why the swap, given ConOps also redeployed on commit — three things it
+  # could not do, each of which had already cost time here:
+  #   1. Declarative state in git. ConOps' app list lived only in its SQLite
+  #      volume, which is why conops/register.py had to exist. Komodo has
+  #      Resource Sync: see komodo/syncs/stacks.toml, applied natively.
+  #   2. Stable compose project names. ConOps named projects after an app UUID,
+  #      so re-registering an app orphaned its named volumes. Komodo names the
+  #      project after the stack.
+  #   3. Auth. ConOps' API was unauthenticated while holding the docker socket;
+  #      only a Cloudflare Access policy stood in front of it. Komodo has real
+  #      local/OIDC/OAuth login of its own.
   # It also handles per-app secrets natively (Variables + Secrets, interpolated
-  # into the compose file), which ConOps can only do through API calls.
+  # into the compose file), which ConOps could only do through API calls.
   #
-  # THE ONE RULE while both are running: no app may be registered in both.
-  # ConOps and Komodo would each run `compose up` against it on their own
-  # schedule, from different clone directories, and fight over the caddy labels.
-  # Migrate one app at a time — delete from ConOps FIRST, then add to Komodo.
+  # dash and text-to-image-bot are still deployed by deploy.sh, for the same
+  # reason they were exempt from ConOps: Komodo clones into its own runtime
+  # directory under /etc/komodo, so a stack needing a gitignored .env (both) or
+  # a repo-relative bind mount (this file's ./beszel and ./ecards) cannot find
+  # them. Folding those two in is possible — Komodo can write an env file and
+  # the paths are stable — but it is a separate job, not a side effect.
   #
   # Mongo rather than SQLite, which is not an option any more: Komodo's SQLite
   # backend was FerretDB v1, dropped in v1.18.0. Current choices are Mongo or
@@ -278,12 +183,23 @@ services:
       - KOMODO_ENABLE_NEW_USERS=false
       - KOMODO_JWT_SECRET=${KOMODO_JWT_SECRET:-}
       - KOMODO_WEBHOOK_SECRET=${KOMODO_WEBHOOK_SECRET:-}
+      # -- the first Server --
+      # Without this Core creates no Server at all (config default is None),
+      # and Periphery's PERIPHERY_CONNECT_AS below then has nothing to attach
+      # to — the UI comes up completely empty and the agent never appears.
+      # Deliberately no KOMODO_FIRST_SERVER_ADDRESS: leaving it unset tells
+      # Core to expect the Periphery -> Core connection direction, which is how
+      # this pair is wired (Periphery dials ws://komodo-core:9120).
+      - KOMODO_FIRST_SERVER_NAME=${KOMODO_SERVER_NAME:-Local}
       # -- polling --
-      # How often Komodo re-checks git for commits. Upstream default is 1-hr,
-      # against ConOps' 1m — that gap is the whole "did my push deploy?" feel.
-      # 5-min is the fastest option Komodo offers. For instant deploys, add the
-      # webhook Komodo shows you on the stack page to the repo on GitHub; this
-      # poll is then just the safety net for missed webhooks.
+      # Drives Komodo's periodic resource checks (image update polling, sync
+      # diffing). Upstream default is 1-hr; 5-min is the fastest option.
+      #
+      # It is NOT a git-commit poll, which is the one real behaviour change
+      # from ConOps: ConOps polled each repo every 60s and redeployed on a new
+      # commit. Komodo drives redeploy-on-push from WEBHOOKS instead — see the
+      # note in komodo/syncs/stacks.toml, including the Cloudflare Access
+      # bypass that /listener/* needs before GitHub can reach it.
       - KOMODO_RESOURCE_POLL_INTERVAL=5-min
       - TZ=Asia/Kolkata
     volumes:
@@ -328,7 +244,7 @@ services:
       - PERIPHERY_CONNECT_AS=${KOMODO_SERVER_NAME:-Local}
       - PERIPHERY_CORE_PUBLIC_KEYS=file:/config/keys/core.pub
       # Same path inside and outside the container, and that is load-bearing
-      # for the same reason /opt/conops-runtime is: Periphery shells out to
+      # for the same reason /opt/conops-runtime was: Periphery shells out to
       # `docker compose` against the HOST daemon, so every path it passes has
       # to resolve identically on both sides.
       # See https://github.com/moghtech/komodo/discussions/180.
@@ -531,9 +447,6 @@ networks:
 volumes:
   uptime-kuma-data:
   autokuma-data:
-  # ConOps' SQLite database and its registered-app config. Losing this means
-  # re-registering the four stacks, not losing the stacks themselves.
-  conops_data:
   # Komodo's database: every resource definition, user, and update record.
   komodo-mongo-data:
   komodo-mongo-config:

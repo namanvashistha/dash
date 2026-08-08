@@ -1,0 +1,143 @@
+# Komodo Resource Sync — the declarative source of truth for this box's apps.
+#
+# This file replaces conops/apps.json + conops/register.py. ConOps had no
+# declarative bootstrap, so a python one-shot POSTed the app list through its
+# API on every `compose up`; Komodo diffs this file against its database
+# natively and applies the difference.
+#
+# HOW IT IS APPLIED
+# One ResourceSync resource has to be created by hand in the UI the first time
+# (Syncs -> New Sync), pointing at this repo with resource path `komodo/syncs`.
+# After that it manages itself — the [[resource_sync]] block below is the same
+# resource, so later changes to it come through git like everything else.
+#
+# `delete = true` on that sync means this file is authoritative: a stack that
+# disappears from here gets DELETED from Komodo on the next sync. That is the
+# behaviour we want (no silent drift), and it is also the sharp edge — deleting
+# a block here tears down the containers.
+#
+# WHAT IS NOT HERE
+# Secrets. Anything sensitive goes in Komodo's Variables & Secrets store and is
+# referenced as [[VARIABLE_NAME]] from a stack's `environment`. This repo is
+# public; nothing secret may ever land in this file.
+
+[[resource_sync]]
+name = "dash-syncs"
+description = "Self-managing sync: applies komodo/syncs from the dash repo."
+
+[resource_sync.config]
+git_provider = "github.com"
+repo = "namanvashistha/dash"
+branch = "main"
+# A directory, so new .toml files dropped in here are picked up without
+# editing the sync itself.
+resource_path = ["komodo/syncs"]
+# This file is authoritative — remove a resource here and Komodo removes it.
+delete = true
+# `managed` would let Komodo WRITE resources back into this file from the UI.
+# Left off deliberately: git is the input, not the output. Turn it on only if
+# you decide the UI should be the place you edit things.
+managed = false
+# Stacks only for now. Variables are secret and stay in the database; user
+# groups are pointless on a single-admin instance.
+include_resources = true
+include_variables = false
+include_user_groups = false
+webhook_enabled = true
+
+# ---------------------------------------------------------------------------
+# Apps. All four were previously deployed by ConOps and are being recreated
+# from scratch here — no state carried over.
+#
+# Shared settings and why they are what they are:
+#
+#   run_build = true
+#     Every one of these repos builds its image from a Dockerfile in-tree.
+#     ConOps ran `compose up -d --build`; this is the equivalent. Without it
+#     Komodo deploys whatever stale image is already on the box.
+#
+#   auto_pull = false
+#     Komodo's default is true, and it is WRONG for these: `compose pull`
+#     fails outright on a service whose image is built locally rather than
+#     pulled from a registry.
+#
+#   poll_for_updates = false
+#     That flag polls for new *image* versions in a registry. These images
+#     don't come from a registry, so it would never find anything.
+#
+# REDEPLOY ON PUSH — the part that actually matters, and the part that differs
+# from ConOps. ConOps polled git every 60s. Komodo drives this from a webhook,
+# not a poll: `webhook_enabled = true` here, plus the URL Komodo shows on each
+# stack page pasted into the repo's GitHub webhook settings, using
+# KOMODO_WEBHOOK_SECRET from dash's .env. The path is
+#   https://komodo.namanvashistha.com/listener/github/stack/<id>/deploy
+# and Cloudflare Access WILL BLOCK IT unless /listener/* has a Bypass policy —
+# GitHub cannot log in. Komodo verifies the webhook signature itself, so that
+# bypass is safe; without it, pushes silently do nothing.
+# ---------------------------------------------------------------------------
+
+[[stack]]
+name = "chess"
+description = "Multiplayer chess — Go backend, Redis, Postgres."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/chess"
+branch = "main"
+# .yaml, not .yml — the only one of the four spelled this way.
+file_paths = ["docker-compose.yaml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "hyperbole"
+description = "C++ ttyd terminal app."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/hyperbole"
+# master, not main.
+branch = "master"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "foodly"
+description = "Foodly app + MariaDB."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/foodly"
+branch = "master"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "limedb"
+description = "Distributed KV store — 4 nodes + web UI."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/limedb"
+branch = "main"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
