@@ -19,9 +19,12 @@ services:
     # find it; compose would otherwise name it dash-caddy-1
     container_name: caddy_proxy
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    # No `ports:` on purpose. Ingress now arrives through the cloudflared
+    # tunnel below, which reaches this container as `caddy:80` over the shared
+    # docker network — the host never needs a listening socket. 443 was already
+    # dead weight (auto_https is off; Cloudflare terminates TLS at its edge),
+    # and dropping 80 means nothing on the LAN can hit this box directly
+    # either. Re-add `- "127.0.0.1:80:80"` if you want local-only access back.
     volumes:
       # read-write is required — caddy-docker-proxy needs the socket's event
       # stream to see label changes, not just a container list
@@ -41,6 +44,51 @@ services:
       caddy: ""
       caddy.auto_https: "off"
     networks: [caddy]
+    healthcheck:
+      # Caddy's admin API, not a site. Hitting :80 is useless here — with no
+      # matching host header the proxy correctly answers 404, which wget reads
+      # as failure. :2019/config/ returns the live config and 200 whenever the
+      # process is actually up and configured.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---- Cloudflared: the only ingress path onto this box ----
+  # Replaces port-forwarding entirely. The tunnel dials OUT to Cloudflare's
+  # edge, so the host needs no public IP, no open inbound port and no router
+  # config — which is the whole reason this exists: the box sits behind CGNAT.
+  #
+  # Routing lives in the Cloudflare dashboard (Zero Trust -> Networks ->
+  # Tunnels -> this tunnel -> Public Hostnames), NOT here. Point a wildcard
+  # `*.namanvashistha.com` at `http://caddy:80` and every service on the box is
+  # reachable the moment Caddy picks up its label — no dashboard edit per app.
+  # `caddy` resolves because compose registers the service name as a network
+  # alias; the container_name above is a second alias, not a replacement.
+  #
+  # Trade-off being accepted: Cloudflare terminates TLS, so it sees plaintext
+  # for every request, and the free plan caps request bodies at 100 MB.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    # --no-autoupdate because the container is the update unit; letting the
+    # binary rewrite itself in place makes the running version untraceable.
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
+    environment:
+      # From the dashboard when the tunnel is created. No token = no ingress
+      # at all now that Caddy has no host ports, so this is not optional.
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?CF_TUNNEL_TOKEN is required - see .env.example}
+      - TZ=Asia/Kolkata
+    expose:
+      - "2000"
+    networks: [caddy]
+    # No healthcheck: the image is distroless-style and ships no shell, wget or
+    # curl, so there is nothing to run the probe with. `--metrics` above exposes
+    # /ready on :2000 instead — AutoKuma won't pick it up (no caddy label), so
+    # add it in Uptime Kuma by hand as http://cloudflared:2000/ready if you
+    # want the tunnel itself on the status page.
 
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
@@ -69,6 +117,14 @@ services:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://status.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8090}}"
+    healthcheck:
+      # The hub is a PocketBase app, so /api/health is a real endpoint and
+      # returns 200 without auth.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   beszel-agent:
     image: henrygd/beszel-agent:latest
@@ -182,6 +238,12 @@ services:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://ecards-heart-org.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 80}}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 networks:
   # Deliberately external, and staying that way. Six independent compose
