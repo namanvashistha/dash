@@ -213,6 +213,12 @@ services:
       - portainer_data:/data
     environment:
       - TZ=Asia/Kolkata
+      # Portainer 2.27.7+ validates Origin/Referer for CSRF and rejects anything
+      # it does not consider its own origin, which is every reverse-proxied
+      # setup. Symptom is a request that hangs forever while the log says
+      # `error="origin invalid" ... trusted_origins=[]`.
+      # Comma-separated; `*` is explicitly not supported.
+      - TRUSTED_ORIGINS=https://portainer.namanvashistha.com
     # 9000 is the plain-HTTP UI. Caddy terminates in front of it, and 9443
     # (Portainer's own TLS) is unnecessary behind the tunnel. 8000 is the Edge
     # agent tunnel — not needed for a single local host.
@@ -223,6 +229,12 @@ services:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://portainer.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 9000}}"
+      # The other half of the CSRF fix, and the more correct one. TLS ends at
+      # Cloudflare, so cloudflared -> Caddy is plaintext and Caddy would
+      # otherwise forward X-Forwarded-Proto: http. Portainer then believes it is
+      # serving HTTP while the browser's Origin says HTTPS, and the mismatch is
+      # what fails the check. The client's real scheme IS https, so say so.
+      caddy.reverse_proxy.header_up: "X-Forwarded-Proto https"
 
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
