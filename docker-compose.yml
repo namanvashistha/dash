@@ -183,6 +183,47 @@ services:
     restart: "no"
     networks: [caddy]
 
+  # ---- Portainer CE: evaluation, running alongside ConOps ----
+  # Here to be assessed, not yet to replace anything. It discovers the existing
+  # containers read-only, so it changes nothing until a stack is deployed
+  # THROUGH it — do not deploy chess/foodly/hyperbole/limedb here while ConOps
+  # still owns them, or both will manage the same project and fight, the same
+  # way the duplicate ConOps registrations did.
+  #
+  # It cannot take those four over as they stand regardless: Portainer does not
+  # implement `build:` for git-deployed stacks (docs.portainer.io FAQ), and all
+  # four compose files still build from source. That only becomes possible after
+  # builds move to GitHub Actions and the compose files reference ghcr.io images.
+  # This is here to decide whether that project is worth starting.
+  #
+  # What to evaluate: git-deployed stacks, GitOps polling vs webhook, re-pull
+  # image + force redeployment, the built-in auth, and whether stack project
+  # names stay stable (they do — named after the stack, not a random UUID).
+  portainer:
+    # `lts` rather than a digest, unlike conops: this is a maintained project
+    # where tracking security releases is the safer default. Nothing auto-pulls
+    # anyway — deploy.sh runs `compose up -d` without `--pull always`, so the
+    # image only moves when you ask it to.
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    volumes:
+      # read-write: Portainer creates and removes containers, same as conops
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    environment:
+      - TZ=Asia/Kolkata
+    # 9000 is the plain-HTTP UI. Caddy terminates in front of it, and 9443
+    # (Portainer's own TLS) is unnecessary behind the tunnel. 8000 is the Edge
+    # agent tunnel — not needed for a single local host.
+    expose:
+      - "9000"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://portainer.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 9000}}"
+
   # ---- Beszel: lightweight server + container monitoring ----
   # Hub = web UI + embedded DB. The agent below reports to it over the shared
   # unix socket in ./beszel/socket, so their traffic never crosses a network.
@@ -360,6 +401,9 @@ volumes:
   # ConOps' SQLite database and its registered-app config. Losing this means
   # re-registering the four stacks, not losing the stacks themselves.
   conops_data:
+  # Portainer's database, users and stack definitions. Delete this to reset the
+  # evaluation, including the admin account.
+  portainer_data:
   # Caddy's certificates and state, from the `docker run -v caddy_data:/data`
   # era. External for the same reason as the network above — compose applies
   # the same label check to volumes, so a `name: caddy_data` entry would fail
